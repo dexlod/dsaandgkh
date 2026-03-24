@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Комментарии</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <button class="back-btn" id="backBtn" type="button">←</button>
+        <div class="title-block">
+          <div class="title">Комментарии</div>
+          <div class="subtitle" id="subtitle">Загрузка...</div>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="card">
+          <div class="label">Post ID</div>
+          <div class="value" id="postIdValue">—</div>
+        </section>
+
+        <section class="card">
+          <div class="label">Payload</div>
+          <div class="value mono" id="payloadValue">—</div>
+        </section>
+
+        <section class="card">
+          <div class="label">Статус</div>
+          <div class="value">
+            Это первый экран mini app. Следующим этапом сюда подключим список
+            комментариев и форму отправки.
+          </div>
+        </section>
+
+        <section class="card muted">
+          <div class="label">Важно</div>
+          <div class="value">
+            Комментарии ещё не активны. Сейчас мы проверяем открытие mini app и
+            получение контекста поста.
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
