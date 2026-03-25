@@ -35,6 +35,7 @@ function mapRow(row) {
     postId: row.post_id,
     userId: row.user_id ?? null,
     userName: row.user_name,
+    userPhotoUrl: row.user_photo_url || null,
     text: row.text,
     isDeleted: Number(row.is_deleted) === 1,
     createdAt: row.created_at,
@@ -288,6 +289,32 @@ function getInitDataFromRequest(req) {
   return '';
 }
 
+function extractImageUrl(attachment) {
+  const payload = attachment?.payload || {};
+  return (
+    payload.url ||
+    payload.image_url ||
+    payload.preview_url ||
+    payload.thumbnail_url ||
+    payload.src ||
+    null
+  );
+}
+
+function mapPostForUi(row) {
+  const attachments = parseAttachments(row.attachments_json || row.media_attachments_json);
+
+  return {
+    id: row.public_id,
+    text: row.post_text || '',
+    attachments: attachments.map((item) => ({
+      type: item?.type || 'unknown',
+      imageUrl: extractImageUrl(item),
+      payload: item?.payload || {},
+    })),
+  };
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
@@ -306,6 +333,7 @@ export default async function handler(req, res) {
           viewer = {
             id: validated.id,
             name: buildUserDisplayName(validated),
+            photoUrl: validated.photoUrl,
             isAdmin: isAdminUser(validated.id),
           };
         } catch (error) {
@@ -313,13 +341,14 @@ export default async function handler(req, res) {
         }
       }
 
-      const result = await db.execute({
+      const commentsResult = await db.execute({
         sql: `
           SELECT
             public_id,
             post_id,
             user_id,
             user_name,
+            user_photo_url,
             text,
             is_deleted,
             created_at
@@ -330,14 +359,31 @@ export default async function handler(req, res) {
         args: [postId],
       });
 
-      const comments = result.rows.map(mapRow);
+      const postResult = await db.execute({
+        sql: `
+          SELECT
+            p.public_id,
+            COALESCE(d.text, '') AS post_text,
+            COALESCE(p.media_attachments_json, d.attachments_json, '[]') AS attachments_json
+          FROM posts p
+          LEFT JOIN drafts d
+            ON d.published_post_id = p.public_id
+          WHERE p.public_id = ?
+          LIMIT 1
+        `,
+        args: [postId],
+      });
+
+      const comments = commentsResult.rows.map(mapRow);
       const visibleCount = comments.filter((item) => !item.isDeleted).length;
+      const postRow = postResult.rows[0] || null;
 
       return sendJson(res, 200, {
         postId,
         count: visibleCount,
         comments,
         viewer,
+        post: postRow ? mapPostForUi(postRow) : null,
       });
     }
 
@@ -380,12 +426,13 @@ export default async function handler(req, res) {
             post_id,
             user_id,
             user_name,
+            user_photo_url,
             text,
             is_deleted
           )
-          VALUES (?, ?, ?, ?, ?, 0)
+          VALUES (?, ?, ?, ?, ?, ?, 0)
         `,
-        args: [publicId, postId, viewer.id, userName, text],
+        args: [publicId, postId, viewer.id, userName, viewer.photoUrl, text],
       });
 
       const inserted = await db.execute({
@@ -395,6 +442,7 @@ export default async function handler(req, res) {
             post_id,
             user_id,
             user_name,
+            user_photo_url,
             text,
             is_deleted,
             created_at

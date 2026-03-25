@@ -7,25 +7,21 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>Комментарии</title>
-    <link rel="stylesheet" href="./style.css" />
     <script src="https://st.max.ru/js/max-web-app.js"></script>
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div class="app">
       <header class="topbar">
-        <button class="back-btn" id="backBtn" type="button">←</button>
-
-        <div class="topbar-center">
-          <div class="comments-count-pill" id="commentsCountPill">0 комментариев</div>
-        </div>
-
+        <div class="comments-count-pill" id="commentsCountPill">0 комментариев</div>
         <button class="icon-btn" id="refreshBtn" type="button" title="Обновить">⟳</button>
       </header>
 
       <main class="content">
-        <section class="meta-card">
-          <div class="meta-title">Обсуждение новости</div>
-          <div class="meta-subtitle" id="postIdSubtitle">Загрузка...</div>
+        <section class="post-card" id="postCard">
+          <div class="post-card-text" id="postText">Загрузка публикации...</div>
+          <div class="post-media-grid" id="postMediaGrid"></div>
+          <div class="post-media-meta" id="postMediaMeta"></div>
         </section>
 
         <section class="comments-list" id="commentsList"></section>
@@ -42,7 +38,7 @@
         <button id="sendBtn" class="send-btn" type="button">➤</button>
       </footer>
     </div>
-    <script src="https://st.max.ru/js/max-web-app.js"></script>
+
     <script src="./app.js"></script>
   </body>
 </html>
