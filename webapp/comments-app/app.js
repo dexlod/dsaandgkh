@@ -1,3 +1,7 @@
+function getInitData() {
+  return window.WebApp?.initData || window.WebApp?.InitData || '';
+}
+
 function getStartParam() {
   const fromWebApp = window.WebApp?.initDataUnsafe?.start_param;
   if (fromWebApp) return fromWebApp;
@@ -91,6 +95,11 @@ function renderComments(state) {
 
   listEl.innerHTML = state.comments
     .map((comment) => {
+      const deleteButton =
+        state.viewer?.isAdmin && !comment.isDeleted
+          ? `<button class="delete-btn" data-comment-id="${comment.id}" type="button">Удалить</button>`
+          : '';
+
       return `
         <div class="comment-item">
           <div class="avatar">${createInitials(comment.userName)}</div>
@@ -108,7 +117,7 @@ function renderComments(state) {
 
             <div class="comment-meta">
               <div class="comment-time">${formatTime(comment.createdAt)}</div>
-              <div class="comment-actions"></div>
+              <div class="comment-actions">${deleteButton}</div>
             </div>
           </div>
         </div>
@@ -117,8 +126,12 @@ function renderComments(state) {
     .join('');
 }
 
-async function apiGetComments(postId) {
-  const response = await fetch(`/api/comments?postId=${encodeURIComponent(postId)}`, {
+async function apiGetComments(postId, initData) {
+  const url = `/api/comments?postId=${encodeURIComponent(postId)}${
+    initData ? `&initData=${encodeURIComponent(initData)}` : ''
+  }`;
+
+  const response = await fetch(url, {
     method: 'GET',
   });
 
@@ -129,7 +142,7 @@ async function apiGetComments(postId) {
   return response.json();
 }
 
-async function apiCreateComment(postId, text) {
+async function apiCreateComment(postId, text, initData) {
   const response = await fetch('/api/comments', {
     method: 'POST',
     headers: {
@@ -138,6 +151,7 @@ async function apiCreateComment(postId, text) {
     body: JSON.stringify({
       postId,
       text,
+      initData,
     }),
   });
 
@@ -148,13 +162,34 @@ async function apiCreateComment(postId, text) {
   return response.json();
 }
 
+async function apiDeleteComment(commentId, initData) {
+  const response = await fetch('/api/comments', {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      commentId,
+      initData,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`DELETE /api/comments failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 async function refreshComments(state) {
-  const data = await apiGetComments(state.postId);
+  const data = await apiGetComments(state.postId, state.initData);
   state.comments = Array.isArray(data.comments) ? data.comments : [];
+  state.viewer = data.viewer || null;
   renderComments(state);
 }
 
 async function init() {
+  const initData = getInitData();
   const startParam = getStartParam();
   const postId = extractPostId(startParam);
 
@@ -165,9 +200,11 @@ async function init() {
   const sendBtn = document.getElementById('sendBtn');
 
   const state = {
+    initData,
     startParam,
     postId,
     comments: [],
+    viewer: null,
     sending: false,
   };
 
@@ -207,6 +244,11 @@ async function init() {
       return;
     }
 
+    if (!state.initData) {
+      alert('Не удалось подтвердить пользователя MAX.');
+      return;
+    }
+
     if (!text || state.sending) {
       return;
     }
@@ -220,7 +262,7 @@ async function init() {
     sendBtn.disabled = true;
 
     try {
-      await apiCreateComment(postId, text);
+      await apiCreateComment(postId, text, state.initData);
       inputEl.value = '';
       autoResizeTextarea(inputEl);
 
@@ -252,14 +294,43 @@ async function init() {
     }
   });
 
+  document.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const commentId = target.dataset.commentId;
+    if (!commentId) return;
+
+    if (!state.viewer?.isAdmin) {
+      return;
+    }
+
+    try {
+      await apiDeleteComment(commentId, state.initData);
+      await refreshComments(state);
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось удалить комментарий.');
+    }
+  });
+
   backBtn.addEventListener('click', () => {
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
 
+    if (window.WebApp?.close) {
+      window.WebApp.close();
+      return;
+    }
+
     window.location.href = 'https://max.ru';
   });
+
+  if (window.WebApp?.ready) {
+    window.WebApp.ready();
+  }
 }
 
 init();
