@@ -11,22 +11,6 @@ function sendJson(res, status, payload) {
   res.send(JSON.stringify(payload));
 }
 
-
-function parseAttachments(raw) {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-
-
-
 function getAdminIds() {
   return String(process.env.ADMIN_USER_IDS || '')
     .split(',')
@@ -83,6 +67,18 @@ function isEditableWithin24h(publishedAt) {
   const now = Date.now();
   const diffMs = now - published;
   return diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000;
+}
+
+function parseAttachments(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseInitData(initDataRaw) {
@@ -161,8 +157,6 @@ function buildUserDisplayName(user) {
   return `user_${user.id}`;
 }
 
-
-
 async function updateChannelCommentButton(post) {
   if (!post?.channel_message_id) {
     return { ok: false, reason: 'no_channel_message_id' };
@@ -220,9 +214,6 @@ async function updateChannelCommentButton(post) {
 
   return { ok: true };
 }
-
-
-
 
 async function refreshPostCommentCount(postId) {
   const countResult = await db.execute({
