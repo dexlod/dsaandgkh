@@ -21,13 +21,14 @@ const db = createClient({
 async function ensureColumn(tableName, columnName, sqlType) {
   const result = await db.execute(`PRAGMA table_info(${tableName})`);
   const exists = result.rows.some((row) => row.name === columnName);
+
   if (!exists) {
     await db.execute(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${sqlType}`);
     console.log(`Added column ${tableName}.${columnName}`);
   }
 }
 
-async function main() {
+async function ensureSchema() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS appeals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +47,11 @@ async function main() {
   `);
 
   await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_appeals_created_at
+    ON appeals(created_at)
+  `);
+
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       public_id TEXT NOT NULL UNIQUE,
@@ -58,6 +64,11 @@ async function main() {
       deleted_at TEXT,
       deleted_by_user_id INTEGER
     )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_comments_public_id
+    ON comments(public_id)
   `);
 
   await db.execute(`
@@ -83,6 +94,11 @@ async function main() {
   `);
 
   await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_posts_discussion_payload
+    ON posts(discussion_payload)
+  `);
+
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS drafts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       public_id TEXT NOT NULL UNIQUE,
@@ -103,15 +119,24 @@ async function main() {
       published_post_id TEXT,
       deleted_at TEXT,
       scheduled_for TEXT,
-      last_error TEXT
+      last_error TEXT,
+      draft_card_message_id TEXT
     )
   `);
-
-  await ensureColumn('drafts', 'draft_card_message_id', 'TEXT');
 
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_drafts_public_id
     ON drafts(public_id)
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_drafts_status_created_at
+    ON drafts(status, created_at)
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_drafts_created_by_user_id
+    ON drafts(created_by_user_id)
   `);
 
   await db.execute(`
@@ -126,6 +151,22 @@ async function main() {
     )
   `);
 
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_draft_events_draft_id_created_at
+    ON draft_events(draft_id, created_at)
+  `);
+
+  // Для уже существующей базы: добиваем недостающие поля в drafts
+  await ensureColumn('drafts', 'quote_text', 'TEXT');
+  await ensureColumn('drafts', 'quote_author', 'TEXT');
+  await ensureColumn('drafts', 'published_post_id', 'TEXT');
+  await ensureColumn('drafts', 'deleted_at', 'TEXT');
+  await ensureColumn('drafts', 'scheduled_for', 'TEXT');
+  await ensureColumn('drafts', 'last_error', 'TEXT');
+  await ensureColumn('drafts', 'draft_card_message_id', 'TEXT');
+}
+
+async function printTables() {
   const result = await db.execute(`
     SELECT name
     FROM sqlite_master
@@ -137,7 +178,11 @@ async function main() {
   for (const row of result.rows) {
     console.log('-', row.name);
   }
+}
 
+async function main() {
+  await ensureSchema();
+  await printTables();
   console.log('Done.');
 }
 

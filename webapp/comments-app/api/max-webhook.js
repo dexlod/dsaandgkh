@@ -10,6 +10,14 @@ function sendJson(res, status, payload) {
   res.send(JSON.stringify(payload));
 }
 
+function safeStringify(value, fallback = '{}') {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return fallback;
+  }
+}
+
 function isValidWebhookSecret(req) {
   const incoming = req.headers['x-max-bot-api-secret'];
   return incoming && incoming === process.env.MAX_WEBHOOK_SECRET;
@@ -30,6 +38,10 @@ function isAdminUser(userId) {
 
 function normalizeText(value) {
   return String(value || '').replace(/\r\n/g, '\n').trim();
+}
+
+function escapeMarkdown(value) {
+  return String(value || '').replace(/([\\_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
 }
 
 function extractDisplayName(sender) {
@@ -81,6 +93,64 @@ function formatCommentsButtonText(count) {
   }
 
   return `💬 ${count} ${word} →`;
+}
+
+function parseAttachments(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function summarizeAttachments(attachments) {
+  const counts = new Map();
+
+  for (const item of attachments) {
+    const type = item?.type || 'unknown';
+    counts.set(type, (counts.get(type) || 0) + 1);
+  }
+
+  if (counts.size === 0) {
+    return {
+      total: 0,
+      line: 'нет',
+    };
+  }
+
+  const parts = Array.from(counts.entries()).map(([type, count]) => `${type} ×${count}`);
+
+  return {
+    total: attachments.length,
+    line: parts.join(', '),
+  };
+}
+
+function normalizeOutgoingAttachments(rawAttachments) {
+  const result = [];
+
+  for (const item of rawAttachments) {
+    if (!item || typeof item !== 'object') continue;
+
+    const type = item.type;
+    const payload = item.payload;
+
+    if (!type || !payload) continue;
+
+    // MAX официально поддерживает эти типы для отправки
+    if (type === 'image' || type === 'video' || type === 'audio' || type === 'file') {
+      result.push({
+        type,
+        payload,
+      });
+    }
+  }
+
+  return result;
 }
 
 async function sendMessageToUser(userId, body) {
@@ -190,6 +260,10 @@ function buildDraftKeyboard(draftId) {
 }
 
 function buildPublishedKeyboard(channelPostUrl) {
+  if (!channelPostUrl) {
+    return [];
+  }
+
   return [
     {
       type: 'inline_keyboard',
@@ -210,35 +284,45 @@ function buildPublishedKeyboard(channelPostUrl) {
 
 function formatDraftPreview(draft) {
   const text = draft.text
-    ? draft.text
-    : '_Текст отсутствует. Возможно, в сообщении только вложения._';
+    ? escapeMarkdown(draft.text)
+    : '_Текст отсутствует\\. Возможно, в сообщении только вложения\\._';
 
-  const attachmentsCount = Array.isArray(draft.attachments) ? draft.attachments.length : 0;
-  const attachmentsLine = attachmentsCount > 0 ? `\n\n_Вложения: ${attachmentsCount}_` : '';
+  const attachments = Array.isArray(draft.attachments) ? draft.attachments : [];
+  const summary = summarizeAttachments(attachments);
 
   return [
     '**Черновик зарегистрирован**',
-    `**Номер:** ${draft.publicId}`,
+    `**Номер:** ${escapeMarkdown(draft.publicId)}`,
     '',
     '**Предпросмотр поста:**',
     '',
-    `${text}${attachmentsLine}`,
+    text,
+    '',
+    `**Вложения:** ${summary.total}`,
+    `**Типы:** ${escapeMarkdown(summary.line)}`,
   ].join('\n');
 }
 
 function formatPublishedDraftCard(draft, publishedPost) {
-  return [
+  const lines = [
     '**Пост опубликован**',
-    `**Черновик:** ${draft.publicId}`,
+    `**Черновик:** ${escapeMarkdown(draft.publicId)}`,
+    publishedPost?.publicId ? `**Пост:** ${escapeMarkdown(publishedPost.publicId)}` : '',
     '',
-    draft.text || '_Без текста_',
-  ].join('\n');
+    draft.text ? escapeMarkdown(draft.text) : '_Без текста_',
+  ].filter(Boolean);
+
+  if (!publishedPost?.channelPostUrl) {
+    lines.push('', '_Ссылка на пост не вернулась от API\\._');
+  }
+
+  return lines.join('\n');
 }
 
 function formatDeletedDraftCard(draft) {
   return [
     '**Черновик удалён**',
-    `**Номер:** ${draft.publicId}`,
+    `**Номер:** ${escapeMarkdown(draft.publicId)}`,
   ].join('\n');
 }
 
@@ -246,11 +330,50 @@ function formatAppealForOperators(appeal) {
   return [
     '**Новое обращение**',
     '',
-    `**Номер:** ${appeal.publicId}`,
-    `**Пользователь:** ${appeal.userName}`,
+    `**Номер:** ${escapeMarkdown(appeal.publicId)}`,
+    `**Пользователь:** ${escapeMarkdown(appeal.userName)}`,
     '',
-    appeal.text,
+    escapeMarkdown(appeal.text),
   ].join('\n');
+}
+
+async function setDraftCardMessageId(draftId, messageId) {
+  await db.execute({
+    sql: `
+      UPDATE drafts
+      SET
+        draft_card_message_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE public_id = ?
+    `,
+    args: [messageId, draftId],
+  });
+}
+
+async function setDraftLastError(draftId, errorText) {
+  await db.execute({
+    sql: `
+      UPDATE drafts
+      SET
+        last_error = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE public_id = ?
+    `,
+    args: [String(errorText || ''), draftId],
+  });
+}
+
+async function clearDraftLastError(draftId) {
+  await db.execute({
+    sql: `
+      UPDATE drafts
+      SET
+        last_error = NULL,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE public_id = ?
+    `,
+    args: [draftId],
+  });
 }
 
 async function saveDraft(update) {
@@ -292,9 +415,9 @@ async function saveDraft(update) {
       body.mid || null,
       recipient.chat_type || null,
       recipient.chat_id != null ? String(recipient.chat_id) : null,
-      JSON.stringify(update),
-      JSON.stringify(message),
-      JSON.stringify(attachments),
+      safeStringify(update, '{}'),
+      safeStringify(message, '{}'),
+      safeStringify(attachments, '[]'),
     ],
   });
 
@@ -313,7 +436,7 @@ async function saveDraft(update) {
       publicId,
       sender.user_id,
       extractDisplayName(sender),
-      JSON.stringify({
+      safeStringify({
         sourceMessageId: body.mid || null,
       }),
     ],
@@ -375,7 +498,8 @@ async function getDraftById(draftId) {
         updated_at,
         published_post_id,
         deleted_at,
-        draft_card_message_id
+        draft_card_message_id,
+        last_error
       FROM drafts
       WHERE public_id = ?
       LIMIT 1
@@ -386,13 +510,6 @@ async function getDraftById(draftId) {
   const row = result.rows[0];
   if (!row) return null;
 
-  let attachments = [];
-  try {
-    attachments = JSON.parse(row.attachments_json || '[]');
-  } catch {
-    attachments = [];
-  }
-
   return {
     publicId: row.public_id,
     status: row.status,
@@ -401,26 +518,14 @@ async function getDraftById(draftId) {
     text: row.text || '',
     quoteText: row.quote_text || '',
     quoteAuthor: row.quote_author || '',
-    attachments,
+    attachments: parseAttachments(row.attachments_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     publishedPostId: row.published_post_id || null,
     deletedAt: row.deleted_at || null,
     draftCardMessageId: row.draft_card_message_id || null,
+    lastError: row.last_error || null,
   };
-}
-
-async function setDraftCardMessageId(draftId, messageId) {
-  await db.execute({
-    sql: `
-      UPDATE drafts
-      SET
-        draft_card_message_id = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE public_id = ?
-    `,
-    args: [messageId, draftId],
-  });
 }
 
 async function markDraftDeleted(draftId, actor) {
@@ -430,6 +535,7 @@ async function markDraftDeleted(draftId, actor) {
       SET
         status = 'deleted',
         deleted_at = CURRENT_TIMESTAMP,
+        last_error = NULL,
         updated_at = CURRENT_TIMESTAMP
       WHERE public_id = ?
         AND status = 'draft'
@@ -460,33 +566,48 @@ async function publishDraft(draft, actor) {
   const postId = buildPostId();
   const discussionPayload = buildDiscussionPayload(postId);
 
-  const channelResponse = await sendMessageToChat(process.env.CHANNEL_CHAT_ID, {
-    text: draft.text || '',
-    format: 'markdown',
-    attachments: [
-      {
-        type: 'inline_keyboard',
-        payload: {
-          buttons: [
-            [
-              {
-                type: 'link',
-                text: formatCommentsButtonText(0),
-                url: `https://max.ru/${process.env.BOT_USERNAME}?startapp=${discussionPayload}`,
-              },
-            ],
-            [
-              {
-                type: 'link',
-                text: '✅ Обращение',
-                url: `https://max.ru/${process.env.BOT_USERNAME}`,
-              },
-            ],
+  const mediaAttachments = normalizeOutgoingAttachments(draft.attachments);
+
+  if (!draft.text && mediaAttachments.length === 0) {
+    throw new Error('Draft has no text and no publishable attachments');
+  }
+
+  const outgoingAttachments = [
+    ...mediaAttachments,
+    {
+      type: 'inline_keyboard',
+      payload: {
+        buttons: [
+          [
+            {
+              type: 'link',
+              text: formatCommentsButtonText(0),
+              url: `https://max.ru/${process.env.BOT_USERNAME}?startapp=${discussionPayload}`,
+            },
           ],
-        },
+          [
+            {
+              type: 'link',
+              text: '✅ Обращение',
+              url: `https://max.ru/${process.env.BOT_USERNAME}`,
+            },
+          ],
+        ],
       },
-    ],
-  });
+    },
+  ];
+
+  let channelResponse;
+
+  try {
+    channelResponse = await sendMessageToChat(process.env.CHANNEL_CHAT_ID, {
+      text: draft.text || '',
+      attachments: outgoingAttachments,
+    });
+  } catch (error) {
+    await setDraftLastError(draft.publicId, error?.message || String(error));
+    throw error;
+  }
 
   const channelMessageId = channelResponse?.message?.body?.mid || null;
   const channelPostUrl = channelResponse?.message?.url || null;
@@ -513,6 +634,7 @@ async function publishDraft(draft, actor) {
       SET
         status = 'published',
         published_post_id = ?,
+        last_error = NULL,
         updated_at = CURRENT_TIMESTAMP
       WHERE public_id = ?
         AND status = 'draft'
@@ -535,7 +657,7 @@ async function publishDraft(draft, actor) {
       draft.publicId,
       actor.user_id,
       extractDisplayName(actor),
-      JSON.stringify({
+      safeStringify({
         postId,
         channelMessageId,
         channelPostUrl,
@@ -558,7 +680,9 @@ async function handleMessageCreated(update, res) {
   const sender = message.sender || {};
   const body = message.body || {};
   const text = normalizeText(body.text || '');
+  const attachments = body.attachments || [];
 
+  // Только личные диалоги
   if (recipient.chat_type !== 'dialog') {
     return sendJson(res, 200, { ok: true, ignored: 'non-dialog' });
   }
@@ -593,10 +717,12 @@ async function handleMessageCreated(update, res) {
     return sendJson(res, 200, { ok: true });
   }
 
+  // Другие slash-команды не превращаем ни в черновик, ни в обращение
   if (text.startsWith('/')) {
     return sendJson(res, 200, { ok: true, ignored: 'slash-command' });
   }
 
+  // Админ -> черновик
   if (isAdminUser(sender.user_id)) {
     const draft = await saveDraft(update);
 
@@ -612,6 +738,22 @@ async function handleMessageCreated(update, res) {
     }
 
     return sendJson(res, 200, { ok: true, mode: 'draft', draftId: draft.publicId });
+  }
+
+  // Не-админ -> обращение
+  if (!text) {
+    if (attachments.length > 0) {
+      await sendMessageToUser(sender.user_id, {
+        text: 'Пока обращения принимаются текстом. Добавьте текст к сообщению и отправьте снова.',
+      });
+      return sendJson(res, 200, { ok: true, ignored: 'empty-appeal-with-attachments' });
+    }
+
+    await sendMessageToUser(sender.user_id, {
+      text: 'Пожалуйста, напишите текст обращения.',
+    });
+
+    return sendJson(res, 200, { ok: true, ignored: 'empty-appeal' });
   }
 
   const appeal = await saveAppeal(update);
@@ -640,7 +782,7 @@ async function handleMessageCallback(update, res) {
   const callback = update.callback || {};
   const callbackId = callback.callback_id;
   const sender = callback.user || callback.sender || {};
-  const payload = String(callback.payload || '').trim();
+  const payload = String(callback.payload ?? callback.data ?? '').trim();
 
   if (!callbackId || !payload) {
     return sendJson(res, 200, { ok: true, ignored: 'empty-callback' });
@@ -691,9 +833,11 @@ async function handleMessageCallback(update, res) {
     if (draft.draftCardMessageId) {
       try {
         await deleteMessage(draft.draftCardMessageId);
+
         await answerCallback(callbackId, {
           notification: 'Черновик удалён.',
         });
+
         return sendJson(res, 200, { ok: true, action: 'delete' });
       } catch (error) {
         console.error('Failed to delete draft card message', error);
@@ -720,18 +864,34 @@ async function handleMessageCallback(update, res) {
       return sendJson(res, 200, { ok: true });
     }
 
-    const publishedPost = await publishDraft(draft, sender);
+    try {
+      const publishedPost = await publishDraft(draft, sender);
 
-    await answerCallback(callbackId, {
-      notification: 'Пост опубликован.',
-      message: {
-        text: formatPublishedDraftCard(draft, publishedPost),
-        format: 'markdown',
-        attachments: buildPublishedKeyboard(publishedPost.channelPostUrl),
-      },
-    });
+      await answerCallback(callbackId, {
+        notification: 'Пост опубликован.',
+        message: {
+          text: formatPublishedDraftCard(draft, publishedPost),
+          format: 'markdown',
+          attachments: buildPublishedKeyboard(publishedPost.channelPostUrl),
+        },
+      });
 
-    return sendJson(res, 200, { ok: true, action: 'publish' });
+      return sendJson(res, 200, { ok: true, action: 'publish' });
+    } catch (error) {
+      console.error('Failed to publish draft', error);
+
+      await setDraftLastError(draft.publicId, error?.message || String(error));
+
+      await answerCallback(callbackId, {
+        notification: 'Не удалось опубликовать пост.',
+      });
+
+      return sendJson(res, 200, {
+        ok: true,
+        action: 'publish-failed',
+        error: String(error?.message || error),
+      });
+    }
   }
 
   await answerCallback(callbackId, {
