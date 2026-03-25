@@ -10,11 +10,13 @@ const envSchema = z.object({
   APP_ENV: z.enum(['development', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
+  BOT_TOKEN: z.string().min(10, 'BOT_TOKEN is required'),
+  BOT_USERNAME: z.string().min(3, 'BOT_USERNAME is required'),
+
   OPERATORS_CHAT_ID: nonZeroInt,
   CHANNEL_CHAT_ID: nonZeroInt,
 
   DATABASE_PATH: z.string().min(1).default('./data/bot.sqlite'),
-  BOT_USERNAME: z.string().min(3, 'BOT_USERNAME is required'),
   COMMENTS_APP_URL: z.string().url('COMMENTS_APP_URL must be a valid URL'),
   INTERNAL_API_KEY: z.string().min(8, 'INTERNAL_API_KEY is required'),
 
