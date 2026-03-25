@@ -190,6 +190,15 @@ function init() {
     autoResizeTextarea(inputEl);
   });
 
+  inputEl.addEventListener('focus', () => {
+    setTimeout(() => {
+      inputEl.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 250);
+  });
+
   sendBtn.addEventListener('click', () => {
     const text = inputEl.value.trim();
 
@@ -214,6 +223,13 @@ function init() {
 
     inputEl.value = '';
     autoResizeTextarea(inputEl);
+
+    setTimeout(() => {
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: 'smooth',
+      });
+    }, 50);
   });
 
   refreshBtn.addEventListener('click', () => {
