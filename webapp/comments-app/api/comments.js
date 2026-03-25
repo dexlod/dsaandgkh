@@ -313,6 +313,18 @@ function extractVideoPosterUrl(attachment) {
   );
 }
 
+function extractVideoUrl(attachment) {
+  const payload = attachment?.payload || {};
+  return (
+    payload.video_url ||
+    payload.url ||
+    payload.file_url ||
+    payload.download_url ||
+    payload.src ||
+    null
+  );
+}
+
 function mapAttachmentForUi(item) {
   const type = item?.type || 'unknown';
   const payload = item?.payload || {};
@@ -323,6 +335,7 @@ function mapAttachmentForUi(item) {
       kind: 'image',
       imageUrl: extractImageUrl(item),
       posterUrl: null,
+      videoUrl: null,
       payload,
     };
   }
@@ -333,6 +346,7 @@ function mapAttachmentForUi(item) {
       kind: 'video',
       imageUrl: null,
       posterUrl: extractVideoPosterUrl(item),
+      videoUrl: extractVideoUrl(item),
       payload,
     };
   }
@@ -342,6 +356,7 @@ function mapAttachmentForUi(item) {
     kind: 'other',
     imageUrl: null,
     posterUrl: null,
+    videoUrl: null,
     payload,
   };
 }

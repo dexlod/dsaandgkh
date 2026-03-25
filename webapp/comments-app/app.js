@@ -119,6 +119,20 @@ function renderPost(state) {
       }
 
       if (item.kind === 'video') {
+        if (item.videoUrl) {
+          const posterAttr = item.posterUrl
+            ? ` poster="${escapeHtml(item.posterUrl)}"`
+            : '';
+
+          return `
+            <div class="post-media-item post-video-item">
+              <video controls playsinline preload="metadata"${posterAttr}>
+                <source src="${escapeHtml(item.videoUrl)}" />
+              </video>
+            </div>
+          `;
+        }
+
         if (item.posterUrl) {
           return `
             <div class="post-media-item post-video-item">
