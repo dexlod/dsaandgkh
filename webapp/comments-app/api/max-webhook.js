@@ -95,20 +95,36 @@ async function sendMessageToChat(chatId, body) {
 }
 
 function formatDraftCard(draft) {
-  const hasText = draft.text ? 'да' : 'нет';
-  const attachments = Array.isArray(draft.attachments) ? draft.attachments.length : 0;
-  const quote = draft.quoteText ? 'да' : 'нет';
+  const attachmentsCount = Array.isArray(draft.attachments) ? draft.attachments.length : 0;
+
+  const quoteBlock = draft.quoteText
+    ? [
+        '',
+        '──────────',
+        draft.quoteAuthor ? `**Цитата — ${draft.quoteAuthor}**` : '**Цитата**',
+        draft.quoteText,
+        '──────────',
+      ].join('\n')
+    : '';
+
+  const bodyPreview = draft.text
+    ? draft.text
+    : '_Текст отсутствует. Возможно, в сообщении только вложения._';
+
+  const attachmentsLine =
+    attachmentsCount > 0
+      ? `\n\n_Вложения: ${attachmentsCount}_`
+      : '';
 
   return [
-    `**Черновик зарегистрирован**`,
-    ``,
+    '**Черновик зарегистрирован**',
     `**Номер:** ${draft.publicId}`,
-    `**Автор:** ${draft.createdByUserName}`,
-    `**Текст:** ${hasText}`,
-    `**Вложений:** ${attachments}`,
-    `**Цитата:** ${quote}`,
-    ``,
-    `Далее добавим кнопки действий: опубликовать, редактировать, удалить.`,
+    '',
+    '**Как пост будет выглядеть:**',
+    '',
+    `${quoteBlock ? `${quoteBlock}\n\n` : ''}${bodyPreview}${attachmentsLine}`,
+    '',
+    '_Далее добавим кнопки: Опубликовать / Редактировать / Удалить_',
   ].join('\n');
 }
 
@@ -321,10 +337,14 @@ export default async function handler(req, res) {
     // Не-админ -> обращение
     const appeal = await saveAppeal(update);
 
-    await sendMessageToChat(process.env.OPERATORS_CHAT_ID, {
-      text: formatAppealForOperators(appeal),
-      format: 'markdown',
-    });
+    try {
+      await sendMessageToChat(process.env.OPERATORS_CHAT_ID, {
+        text: formatAppealForOperators(appeal),
+        format: 'markdown',
+      });
+    } catch (error) {
+      console.error('Failed to forward appeal to operators chat', error);
+    }
 
     await sendMessageToUser(sender.user_id, {
       text: [

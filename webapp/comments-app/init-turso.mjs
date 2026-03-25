@@ -20,6 +20,28 @@ const db = createClient({
 
 async function main() {
   await db.execute(`
+    CREATE TABLE IF NOT EXISTS appeals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_id TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'NEW',
+      user_id INTEGER NOT NULL,
+      user_name TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_appeals_public_id
+    ON appeals(public_id)
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_appeals_created_at
+    ON appeals(created_at)
+  `);
+
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       public_id TEXT NOT NULL UNIQUE,
