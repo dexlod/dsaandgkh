@@ -130,6 +130,23 @@ async function main() {
     ON draft_events(draft_id, created_at)
   `);
 
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS admin_states (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      user_name TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      draft_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_admin_states_user_id
+    ON admin_states(user_id)
+  `);
+
   const result = await db.execute(`
     SELECT name
     FROM sqlite_master
