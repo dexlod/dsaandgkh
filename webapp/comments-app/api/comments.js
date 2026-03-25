@@ -274,14 +274,27 @@ function getInitDataFromRequest(req) {
 
 export default async function handler(req, res) {
   try {
-    const initData = getInitDataFromRequest(req);
-    const viewer = validateInitData(initData);
-
     if (req.method === 'GET') {
       const postId = String(req.query.postId || '').trim();
 
       if (!postId) {
         return sendJson(res, 400, { error: 'postId is required' });
+      }
+
+      let viewer = null;
+      const initData = getInitDataFromRequest(req);
+
+      if (initData) {
+        try {
+          const validated = validateInitData(initData);
+          viewer = {
+            id: validated.id,
+            name: buildUserDisplayName(validated),
+            isAdmin: isAdminUser(validated.id),
+          };
+        } catch (error) {
+          console.error('GET comments initData validation failed:', error);
+        }
       }
 
       const result = await db.execute({
@@ -308,15 +321,14 @@ export default async function handler(req, res) {
         postId,
         count: visibleCount,
         comments,
-        viewer: {
-          id: viewer.id,
-          name: buildUserDisplayName(viewer),
-          isAdmin: isAdminUser(viewer.id),
-        },
+        viewer,
       });
     }
 
     if (req.method === 'POST') {
+      const initData = getInitDataFromRequest(req);
+      const viewer = validateInitData(initData);
+
       let body = req.body;
 
       if (typeof body === 'string') {
@@ -389,6 +401,9 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'DELETE') {
+      const initData = getInitDataFromRequest(req);
+      const viewer = validateInitData(initData);
+
       let body = req.body;
 
       if (typeof body === 'string') {
