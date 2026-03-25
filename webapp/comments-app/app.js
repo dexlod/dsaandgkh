@@ -99,24 +99,50 @@ function renderPost(state) {
 
   postTextEl.textContent = state.post.text || '';
 
-  const imageAttachments = state.post.attachments.filter((item) => item.imageUrl);
-  const otherAttachments = state.post.attachments.filter((item) => !item.imageUrl);
+  const visualAttachments = state.post.attachments.filter(
+    (item) => item.kind === 'image' || item.kind === 'video',
+  );
 
-  postMediaGridEl.innerHTML = imageAttachments
+  const otherAttachments = state.post.attachments.filter(
+    (item) => item.kind !== 'image' && item.kind !== 'video',
+  );
+
+  postMediaGridEl.innerHTML = visualAttachments
     .slice(0, 4)
-    .map(
-      (item) => `
-        <div class="post-media-item">
-          <img src="${escapeHtml(item.imageUrl)}" alt="media" loading="lazy" />
-        </div>
-      `,
-    )
+    .map((item) => {
+      if (item.kind === 'image' && item.imageUrl) {
+        return `
+          <div class="post-media-item">
+            <img src="${escapeHtml(item.imageUrl)}" alt="media" loading="lazy" />
+          </div>
+        `;
+      }
+
+      if (item.kind === 'video') {
+        if (item.posterUrl) {
+          return `
+            <div class="post-media-item post-video-item">
+              <img src="${escapeHtml(item.posterUrl)}" alt="video preview" loading="lazy" />
+              <div class="post-video-badge">▶ Видео</div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="post-media-item post-video-item post-video-fallback">
+            <div class="post-video-badge">▶ Видео</div>
+          </div>
+        `;
+      }
+
+      return '';
+    })
     .join('');
 
   const chips = [];
 
-  if (imageAttachments.length > 4) {
-    chips.push(`Ещё изображений: ${imageAttachments.length - 4}`);
+  if (visualAttachments.length > 4) {
+    chips.push(`Ещё медиа: ${visualAttachments.length - 4}`);
   }
 
   const otherCounts = new Map();

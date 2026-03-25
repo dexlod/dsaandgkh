@@ -301,17 +301,58 @@ function extractImageUrl(attachment) {
   );
 }
 
+function extractVideoPosterUrl(attachment) {
+  const payload = attachment?.payload || {};
+  return (
+    payload.preview_url ||
+    payload.thumbnail_url ||
+    payload.cover_url ||
+    payload.poster_url ||
+    payload.snapshot_url ||
+    null
+  );
+}
+
+function mapAttachmentForUi(item) {
+  const type = item?.type || 'unknown';
+  const payload = item?.payload || {};
+
+  if (type === 'image') {
+    return {
+      type,
+      kind: 'image',
+      imageUrl: extractImageUrl(item),
+      posterUrl: null,
+      payload,
+    };
+  }
+
+  if (type === 'video') {
+    return {
+      type,
+      kind: 'video',
+      imageUrl: null,
+      posterUrl: extractVideoPosterUrl(item),
+      payload,
+    };
+  }
+
+  return {
+    type,
+    kind: 'other',
+    imageUrl: null,
+    posterUrl: null,
+    payload,
+  };
+}
+
 function mapPostForUi(row) {
   const attachments = parseAttachments(row.attachments_json || row.media_attachments_json);
 
   return {
     id: row.public_id,
     text: row.post_text || '',
-    attachments: attachments.map((item) => ({
-      type: item?.type || 'unknown',
-      imageUrl: extractImageUrl(item),
-      payload: item?.payload || {},
-    })),
+    attachments: attachments.map(mapAttachmentForUi),
   };
 }
 
