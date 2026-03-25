@@ -301,30 +301,6 @@ function extractImageUrl(attachment) {
   );
 }
 
-function extractVideoPosterUrl(attachment) {
-  const payload = attachment?.payload || {};
-  return (
-    payload.preview_url ||
-    payload.thumbnail_url ||
-    payload.cover_url ||
-    payload.poster_url ||
-    payload.snapshot_url ||
-    null
-  );
-}
-
-function extractVideoUrl(attachment) {
-  const payload = attachment?.payload || {};
-  return (
-    payload.video_url ||
-    payload.url ||
-    payload.file_url ||
-    payload.download_url ||
-    payload.src ||
-    null
-  );
-}
-
 function mapAttachmentForUi(item) {
   const type = item?.type || 'unknown';
   const payload = item?.payload || {};
@@ -334,19 +310,6 @@ function mapAttachmentForUi(item) {
       type,
       kind: 'image',
       imageUrl: extractImageUrl(item),
-      posterUrl: null,
-      videoUrl: null,
-      payload,
-    };
-  }
-
-  if (type === 'video') {
-    return {
-      type,
-      kind: 'video',
-      imageUrl: null,
-      posterUrl: extractVideoPosterUrl(item),
-      videoUrl: extractVideoUrl(item),
       payload,
     };
   }
@@ -355,8 +318,6 @@ function mapAttachmentForUi(item) {
     type,
     kind: 'other',
     imageUrl: null,
-    posterUrl: null,
-    videoUrl: null,
     payload,
   };
 }

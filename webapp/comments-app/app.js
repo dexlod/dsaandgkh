@@ -99,74 +99,25 @@ function renderPost(state) {
 
   postTextEl.textContent = state.post.text || '';
 
-  const visualAttachments = state.post.attachments.filter(
-    (item) => item.kind === 'image' || item.kind === 'video',
+  const imageAttachments = state.post.attachments.filter(
+    (item) => item.kind === 'image' && item.imageUrl,
   );
 
-  const otherAttachments = state.post.attachments.filter(
-    (item) => item.kind !== 'image' && item.kind !== 'video',
-  );
-
-  postMediaGridEl.innerHTML = visualAttachments
+  postMediaGridEl.innerHTML = imageAttachments
     .slice(0, 4)
-    .map((item) => {
-      if (item.kind === 'image' && item.imageUrl) {
-        return `
-          <div class="post-media-item">
-            <img src="${escapeHtml(item.imageUrl)}" alt="media" loading="lazy" />
-          </div>
-        `;
-      }
-
-      if (item.kind === 'video') {
-        if (item.videoUrl) {
-          const posterAttr = item.posterUrl
-            ? ` poster="${escapeHtml(item.posterUrl)}"`
-            : '';
-
-          return `
-            <div class="post-media-item post-video-item">
-              <video controls playsinline preload="metadata"${posterAttr}>
-                <source src="${escapeHtml(item.videoUrl)}" />
-              </video>
-            </div>
-          `;
-        }
-
-        if (item.posterUrl) {
-          return `
-            <div class="post-media-item post-video-item">
-              <img src="${escapeHtml(item.posterUrl)}" alt="video preview" loading="lazy" />
-              <div class="post-video-badge">▶ Видео</div>
-            </div>
-          `;
-        }
-
-        return `
-          <div class="post-media-item post-video-item post-video-fallback">
-            <div class="post-video-badge">▶ Видео</div>
-          </div>
-        `;
-      }
-
-      return '';
-    })
+    .map(
+      (item) => `
+        <div class="post-media-item">
+          <img src="${escapeHtml(item.imageUrl)}" alt="photo" loading="lazy" />
+        </div>
+      `,
+    )
     .join('');
 
   const chips = [];
 
-  if (visualAttachments.length > 4) {
-    chips.push(`Ещё медиа: ${visualAttachments.length - 4}`);
-  }
-
-  const otherCounts = new Map();
-  for (const item of otherAttachments) {
-    const type = item.type || 'unknown';
-    otherCounts.set(type, (otherCounts.get(type) || 0) + 1);
-  }
-
-  for (const [type, count] of otherCounts.entries()) {
-    chips.push(`${type} ×${count}`);
+  if (imageAttachments.length > 4) {
+    chips.push(`Ещё фото: ${imageAttachments.length - 4}`);
   }
 
   postMediaMetaEl.innerHTML = chips
@@ -197,24 +148,20 @@ function renderComments(state) {
           ? `<button class="delete-btn" data-comment-id="${comment.id}" type="button">Удалить</button>`
           : '';
 
+      const normalizedText = String(comment.text || '').replace(/^\s+/u, '');
+      const commentText = comment.isDeleted
+        ? '<span class="deleted-text">Комментарий удалён модератором.</span>'
+        : escapeHtml(normalizedText).replace(/\n/g, '<br>');
+
       return `
         <div class="comment-item">
           <div class="avatar">${renderAvatar(comment)}</div>
-
           <div class="comment-bubble">
             <div class="comment-author">${escapeHtml(comment.userName)}</div>
-
-            <div class="comment-text">
-              ${
-                comment.isDeleted
-                  ? '<span class="deleted-text">Комментарий удалён модератором.</span>'
-                  : escapeHtml(comment.text).replace(/\n/g, '<br>')
-              }
-            </div>
-
+            <div class="comment-text">${commentText}</div>
             <div class="comment-meta">
-              <div class="comment-time">${formatTime(comment.createdAt)}</div>
               <div class="comment-actions">${deleteButton}</div>
+              <div class="comment-time">${formatTime(comment.createdAt)}</div>
             </div>
           </div>
         </div>
