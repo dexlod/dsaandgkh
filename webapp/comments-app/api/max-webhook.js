@@ -146,6 +146,25 @@ async function answerCallback(callbackId, payload) {
   return response.json();
 }
 
+async function deleteMessage(messageId) {
+  const response = await fetch(
+    `https://platform-api.max.ru/messages?message_id=${encodeURIComponent(messageId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: process.env.BOT_TOKEN,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`deleteMessage failed: ${response.status} ${text}`);
+  }
+
+  return response.json();
+}
+
 function buildDraftKeyboard(draftId) {
   return [
     {
@@ -158,17 +177,29 @@ function buildDraftKeyboard(draftId) {
               text: 'Опубликовать',
               payload: `draft:publish:${draftId}`,
             },
-          ],
-          [
-            {
-              type: 'callback',
-              text: 'Редактировать',
-              payload: `draft:edit:${draftId}`,
-            },
             {
               type: 'callback',
               text: 'Удалить',
               payload: `draft:delete:${draftId}`,
+            },
+          ],
+        ],
+      },
+    },
+  ];
+}
+
+function buildPublishedKeyboard(channelPostUrl) {
+  return [
+    {
+      type: 'inline_keyboard',
+      payload: {
+        buttons: [
+          [
+            {
+              type: 'link',
+              text: 'Ссылка',
+              url: channelPostUrl,
             },
           ],
         ],
@@ -199,22 +230,15 @@ function formatPublishedDraftCard(draft, publishedPost) {
   return [
     '**Пост опубликован**',
     `**Черновик:** ${draft.publicId}`,
-    `**Пост:** ${publishedPost.publicId}`,
-    publishedPost.channelPostUrl ? `**Ссылка:** ${publishedPost.channelPostUrl}` : '',
     '',
-    '**Текст:**',
     draft.text || '_Без текста_',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ].join('\n');
 }
 
 function formatDeletedDraftCard(draft) {
   return [
     '**Черновик удалён**',
     `**Номер:** ${draft.publicId}`,
-    '',
-    draft.text || '_Без текста_',
   ].join('\n');
 }
 
@@ -350,7 +374,8 @@ async function getDraftById(draftId) {
         created_at,
         updated_at,
         published_post_id,
-        deleted_at
+        deleted_at,
+        draft_card_message_id
       FROM drafts
       WHERE public_id = ?
       LIMIT 1
@@ -381,94 +406,20 @@ async function getDraftById(draftId) {
     updatedAt: row.updated_at,
     publishedPostId: row.published_post_id || null,
     deletedAt: row.deleted_at || null,
+    draftCardMessageId: row.draft_card_message_id || null,
   };
 }
 
-async function setAdminEditState(userId, userName, draftId) {
-  await db.execute({
-    sql: `
-      INSERT INTO admin_states (
-        user_id,
-        user_name,
-        mode,
-        draft_id,
-        created_at,
-        updated_at
-      )
-      VALUES (?, ?, 'edit_draft', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      ON CONFLICT(user_id) DO UPDATE SET
-        user_name = excluded.user_name,
-        mode = excluded.mode,
-        draft_id = excluded.draft_id,
-        updated_at = CURRENT_TIMESTAMP
-    `,
-    args: [userId, userName, draftId],
-  });
-}
-
-async function clearAdminState(userId) {
-  await db.execute({
-    sql: `DELETE FROM admin_states WHERE user_id = ?`,
-    args: [userId],
-  });
-}
-
-async function getAdminState(userId) {
-  const result = await db.execute({
-    sql: `
-      SELECT user_id, user_name, mode, draft_id, created_at, updated_at
-      FROM admin_states
-      WHERE user_id = ?
-      LIMIT 1
-    `,
-    args: [userId],
-  });
-
-  return result.rows[0] || null;
-}
-
-async function updateDraftText(draftId, actor, newText, update) {
-  const message = update.message || {};
-  const body = message.body || {};
-
+async function setDraftCardMessageId(draftId, messageId) {
   await db.execute({
     sql: `
       UPDATE drafts
       SET
-        text = ?,
-        raw_update_json = ?,
-        raw_message_json = ?,
+        draft_card_message_id = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE public_id = ?
-        AND status = 'draft'
     `,
-    args: [
-      newText,
-      JSON.stringify(update),
-      JSON.stringify(message),
-      draftId,
-    ],
-  });
-
-  await db.execute({
-    sql: `
-      INSERT INTO draft_events (
-        draft_id,
-        event_type,
-        actor_user_id,
-        actor_user_name,
-        payload_json
-      )
-      VALUES (?, 'edited', ?, ?, ?)
-    `,
-    args: [
-      draftId,
-      actor.user_id,
-      extractDisplayName(actor),
-      JSON.stringify({
-        sourceMessageId: body.mid || null,
-      }),
-    ],
+    args: [messageId, draftId],
   });
 }
 
@@ -647,38 +598,18 @@ async function handleMessageCreated(update, res) {
   }
 
   if (isAdminUser(sender.user_id)) {
-    const adminState = await getAdminState(sender.user_id);
-
-    if (adminState && adminState.mode === 'edit_draft' && adminState.draft_id) {
-      await updateDraftText(adminState.draft_id, sender, text, update);
-      await clearAdminState(sender.user_id);
-
-      const updatedDraft = await getDraftById(adminState.draft_id);
-
-      await sendMessageToUser(sender.user_id, {
-        text: [
-          '**Черновик обновлён**',
-          '',
-          formatDraftPreview(updatedDraft),
-        ].join('\n'),
-        format: 'markdown',
-        attachments: buildDraftKeyboard(adminState.draft_id),
-      });
-
-      return sendJson(res, 200, {
-        ok: true,
-        mode: 'draft-edited',
-        draftId: adminState.draft_id,
-      });
-    }
-
     const draft = await saveDraft(update);
 
-    await sendMessageToUser(sender.user_id, {
+    const sent = await sendMessageToUser(sender.user_id, {
       text: formatDraftPreview(draft),
       format: 'markdown',
       attachments: buildDraftKeyboard(draft.publicId),
     });
+
+    const draftCardMessageId = sent?.message?.body?.mid || null;
+    if (draftCardMessageId) {
+      await setDraftCardMessageId(draft.publicId, draftCardMessageId);
+    }
 
     return sendJson(res, 200, { ok: true, mode: 'draft', draftId: draft.publicId });
   }
@@ -746,51 +677,33 @@ async function handleMessageCallback(update, res) {
     return sendJson(res, 200, { ok: true, ignored: 'draft-not-found' });
   }
 
-  if (action === 'edit') {
-    if (draft.status !== 'draft') {
-      await answerCallback(callbackId, {
-        notification: 'Редактировать можно только черновик.',
-      });
-
-      return sendJson(res, 200, { ok: true });
-    }
-
-    await setAdminEditState(sender.user_id, extractDisplayName(sender), draftId);
-
-    await answerCallback(callbackId, {
-      notification: 'Пришлите следующим сообщением новый текст черновика.',
-      message: {
-        text: [
-          formatDraftPreview(draft),
-          '',
-          '_Режим редактирования включён. Следующее обычное сообщение заменит текст черновика._',
-        ].join('\n'),
-        format: 'markdown',
-        attachments: buildDraftKeyboard(draftId),
-      },
-    });
-
-    return sendJson(res, 200, { ok: true, action: 'edit' });
-  }
-
   if (action === 'delete') {
     if (draft.status !== 'draft') {
       await answerCallback(callbackId, {
-        notification: 'Удалить можно только черновик.',
+        notification: 'Черновик уже неактивен.',
       });
 
       return sendJson(res, 200, { ok: true });
     }
 
     await markDraftDeleted(draftId, sender);
-    await clearAdminState(sender.user_id);
 
-    const deletedDraft = await getDraftById(draftId);
+    if (draft.draftCardMessageId) {
+      try {
+        await deleteMessage(draft.draftCardMessageId);
+        await answerCallback(callbackId, {
+          notification: 'Черновик удалён.',
+        });
+        return sendJson(res, 200, { ok: true, action: 'delete' });
+      } catch (error) {
+        console.error('Failed to delete draft card message', error);
+      }
+    }
 
     await answerCallback(callbackId, {
       notification: 'Черновик удалён.',
       message: {
-        text: formatDeletedDraftCard(deletedDraft),
+        text: formatDeletedDraftCard(draft),
         format: 'markdown',
       },
     });
@@ -801,22 +714,20 @@ async function handleMessageCallback(update, res) {
   if (action === 'publish') {
     if (draft.status !== 'draft') {
       await answerCallback(callbackId, {
-        notification: 'Опубликовать можно только черновик.',
+        notification: 'Этот черновик уже опубликован или удалён.',
       });
 
       return sendJson(res, 200, { ok: true });
     }
 
     const publishedPost = await publishDraft(draft, sender);
-    await clearAdminState(sender.user_id);
-
-    const publishedDraft = await getDraftById(draftId);
 
     await answerCallback(callbackId, {
       notification: 'Пост опубликован.',
       message: {
-        text: formatPublishedDraftCard(publishedDraft, publishedPost),
+        text: formatPublishedDraftCard(draft, publishedPost),
         format: 'markdown',
+        attachments: buildPublishedKeyboard(publishedPost.channelPostUrl),
       },
     });
 

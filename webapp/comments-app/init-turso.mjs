@@ -18,6 +18,15 @@ const db = createClient({
   authToken,
 });
 
+async function ensureColumn(tableName, columnName, sqlType) {
+  const result = await db.execute(`PRAGMA table_info(${tableName})`);
+  const exists = result.rows.some((row) => row.name === columnName);
+  if (!exists) {
+    await db.execute(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${sqlType}`);
+    console.log(`Added column ${tableName}.${columnName}`);
+  }
+}
+
 async function main() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS appeals (
@@ -34,11 +43,6 @@ async function main() {
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_appeals_public_id
     ON appeals(public_id)
-  `);
-
-  await db.execute(`
-    CREATE INDEX IF NOT EXISTS idx_appeals_created_at
-    ON appeals(created_at)
   `);
 
   await db.execute(`
@@ -103,14 +107,11 @@ async function main() {
     )
   `);
 
+  await ensureColumn('drafts', 'draft_card_message_id', 'TEXT');
+
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_drafts_public_id
     ON drafts(public_id)
-  `);
-
-  await db.execute(`
-    CREATE INDEX IF NOT EXISTS idx_drafts_status_created_at
-    ON drafts(status, created_at)
   `);
 
   await db.execute(`
@@ -123,28 +124,6 @@ async function main() {
       payload_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
-  `);
-
-  await db.execute(`
-    CREATE INDEX IF NOT EXISTS idx_draft_events_draft_id_created_at
-    ON draft_events(draft_id, created_at)
-  `);
-
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS admin_states (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL UNIQUE,
-      user_name TEXT NOT NULL,
-      mode TEXT NOT NULL,
-      draft_id TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  await db.execute(`
-    CREATE INDEX IF NOT EXISTS idx_admin_states_user_id
-    ON admin_states(user_id)
   `);
 
   const result = await db.execute(`

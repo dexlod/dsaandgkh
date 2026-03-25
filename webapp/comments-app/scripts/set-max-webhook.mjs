@@ -15,7 +15,7 @@ const response = await fetch('https://platform-api.max.ru/subscriptions', {
   },
   body: JSON.stringify({
     url: webhookUrl,
-    update_types: ['message_created'],
+    update_types: ['message_created', 'message_callback'],
     secret,
   }),
 });
