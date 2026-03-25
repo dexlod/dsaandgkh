@@ -27,6 +27,89 @@ function mapRow(row) {
   };
 }
 
+function formatCommentsButtonText(count) {
+  const normalized = Math.abs(count) % 100;
+  const lastDigit = normalized % 10;
+
+  let word = 'комментариев';
+
+  if (normalized < 11 || normalized > 14) {
+    if (lastDigit === 1) {
+      word = 'комментарий';
+    } else if (lastDigit >= 2 && lastDigit <= 4) {
+      word = 'комментария';
+    }
+  }
+
+  return `💬 ${count} ${word} →`;
+}
+
+function buildDiscussionLink() {
+  return `https://max.ru/${process.env.BOT_USERNAME}?startapp=`;
+}
+
+function isEditableWithin24h(publishedAt) {
+  const published = new Date(publishedAt).getTime();
+  const now = Date.now();
+  const diffMs = now - published;
+  return diffMs >= 0 && diffMs < 24 * 60 * 60 * 1000;
+}
+
+async function updateChannelCommentButton(post) {
+  if (!post?.channel_message_id) {
+    return { ok: false, reason: 'no_channel_message_id' };
+  }
+
+  if (!post?.published_at || !isEditableWithin24h(post.published_at)) {
+    return { ok: false, reason: 'older_than_24h' };
+  }
+
+  const response = await fetch(
+    `https://platform-api.max.ru/messages?message_id=${encodeURIComponent(post.channel_message_id)}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: process.env.BOT_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        attachments: [
+          {
+            type: 'inline_keyboard',
+            payload: {
+              buttons: [
+                [
+                  {
+                    type: 'link',
+                    text: formatCommentsButtonText(post.comment_count),
+                    url: `${buildDiscussionLink()}${post.discussion_payload}`,
+                  },
+                ],
+                [
+                  {
+                    type: 'link',
+                    text: '✅ Обращение',
+                    url: `https://max.ru/${process.env.BOT_USERNAME}`,
+                  },
+                ],
+              ],
+            },
+          },
+        ],
+        notify: false,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('Failed to update channel message:', text);
+    return { ok: false, reason: `http_${response.status}` };
+  }
+
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
@@ -126,9 +209,55 @@ export default async function handler(req, res) {
 
       const comment = inserted.rows[0] ? mapRow(inserted.rows[0]) : null;
 
+      const countResult = await db.execute({
+        sql: `
+          SELECT COUNT(*) AS total
+          FROM comments
+          WHERE post_id = ?
+            AND is_deleted = 0
+        `,
+        args: [postId],
+      });
+
+      const commentCount = Number(countResult.rows[0]?.total ?? 0);
+
+      await db.execute({
+        sql: `
+          UPDATE posts
+          SET comment_count = ?
+          WHERE public_id = ?
+        `,
+        args: [commentCount, postId],
+      });
+
+      const postResult = await db.execute({
+        sql: `
+          SELECT
+            public_id,
+            discussion_payload,
+            comment_count,
+            channel_message_id,
+            channel_post_url,
+            published_at
+          FROM posts
+          WHERE public_id = ?
+          LIMIT 1
+        `,
+        args: [postId],
+      });
+
+      const post = postResult.rows[0] || null;
+
+      let syncResult = null;
+      if (post) {
+        syncResult = await updateChannelCommentButton(post);
+      }
+
       return sendJson(res, 201, {
         ok: true,
         comment,
+        count: commentCount,
+        sync: syncResult,
       });
     }
 

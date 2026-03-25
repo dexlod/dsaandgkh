@@ -245,6 +245,11 @@ export function createBot() {
           publishedAt: new Date(),
         });
 
+
+        
+
+
+
         const publishedPost = publisherStore.getById(post.id);
 
         if (!publishedPost) {
@@ -260,6 +265,35 @@ export function createBot() {
           },
           'Post published to channel',
         );
+
+
+
+        try {
+          await fetch(`${env.COMMENTS_APP_URL}/api/posts-register`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-internal-api-key': env.INTERNAL_API_KEY,
+            },
+            body: JSON.stringify({
+              publicId: publishedPost.id,
+              discussionPayload: publishedPost.discussionPayload,
+              channelMessageId: publishedPost.channelMessageId,
+              channelPostUrl: publishedPost.channelPostUrl,
+              publishedAt: publishedPost.publishedAt?.toISOString(),
+            }),
+          });
+        } catch (error) {
+          logger.error(
+            {
+              error,
+              postId: publishedPost.id,
+            },
+            'Failed to register published post in comments backend',
+          );
+        }
+
+
 
         await ctx.reply(formatPostPublished(publishedPost), {
           format: 'markdown',

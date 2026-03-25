@@ -39,6 +39,23 @@ async function main() {
     ON comments(post_id, created_at)
   `);
 
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_id TEXT NOT NULL UNIQUE,
+      discussion_payload TEXT NOT NULL UNIQUE,
+      comment_count INTEGER NOT NULL DEFAULT 0,
+      channel_message_id TEXT,
+      channel_post_url TEXT,
+      published_at TEXT NOT NULL
+    )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_posts_public_id
+    ON posts(public_id)
+  `);
+
   const result = await db.execute(`
     SELECT name
     FROM sqlite_master
