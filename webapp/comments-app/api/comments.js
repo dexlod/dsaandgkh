@@ -11,6 +11,22 @@ function sendJson(res, status, payload) {
   res.send(JSON.stringify(payload));
 }
 
+
+function parseAttachments(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+
+
+
 function getAdminIds() {
   return String(process.env.ADMIN_USER_IDS || '')
     .split(',')
@@ -145,6 +161,8 @@ function buildUserDisplayName(user) {
   return `user_${user.id}`;
 }
 
+
+
 async function updateChannelCommentButton(post) {
   if (!post?.channel_message_id) {
     return { ok: false, reason: 'no_channel_message_id' };
@@ -153,6 +171,8 @@ async function updateChannelCommentButton(post) {
   if (!post?.published_at || !isEditableWithin24h(post.published_at)) {
     return { ok: false, reason: 'older_than_24h' };
   }
+
+  const mediaAttachments = parseAttachments(post.media_attachments_json);
 
   const response = await fetch(
     `https://platform-api.max.ru/messages?message_id=${encodeURIComponent(post.channel_message_id)}`,
@@ -164,6 +184,7 @@ async function updateChannelCommentButton(post) {
       },
       body: JSON.stringify({
         attachments: [
+          ...mediaAttachments,
           {
             type: 'inline_keyboard',
             payload: {
@@ -200,6 +221,9 @@ async function updateChannelCommentButton(post) {
   return { ok: true };
 }
 
+
+
+
 async function refreshPostCommentCount(postId) {
   const countResult = await db.execute({
     sql: `
@@ -228,6 +252,7 @@ async function refreshPostCommentCount(postId) {
         public_id,
         discussion_payload,
         comment_count,
+        media_attachments_json,
         channel_message_id,
         channel_post_url,
         published_at

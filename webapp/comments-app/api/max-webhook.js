@@ -619,13 +619,21 @@ async function publishDraft(draft, actor) {
         public_id,
         discussion_payload,
         comment_count,
+        media_attachments_json,
         channel_message_id,
         channel_post_url,
         published_at
       )
-      VALUES (?, ?, 0, ?, ?, ?)
+      VALUES (?, ?, 0, ?, ?, ?, ?)
     `,
-    args: [postId, discussionPayload, channelMessageId, channelPostUrl, publishedAt],
+    args: [
+      postId,
+      discussionPayload,
+      safeStringify(mediaAttachments, '[]'),
+      channelMessageId,
+      channelPostUrl,
+      publishedAt,
+    ],
   });
 
   await db.execute({

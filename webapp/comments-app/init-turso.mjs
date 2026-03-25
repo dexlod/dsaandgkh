@@ -82,6 +82,7 @@ async function ensureSchema() {
       public_id TEXT NOT NULL UNIQUE,
       discussion_payload TEXT NOT NULL UNIQUE,
       comment_count INTEGER NOT NULL DEFAULT 0,
+      media_attachments_json TEXT NOT NULL DEFAULT '[]',
       channel_message_id TEXT,
       channel_post_url TEXT,
       published_at TEXT NOT NULL
@@ -164,6 +165,7 @@ async function ensureSchema() {
   await ensureColumn('drafts', 'scheduled_for', 'TEXT');
   await ensureColumn('drafts', 'last_error', 'TEXT');
   await ensureColumn('drafts', 'draft_card_message_id', 'TEXT');
+  await ensureColumn('posts', 'media_attachments_json', "TEXT NOT NULL DEFAULT '[]'");
 }
 
 async function printTables() {
