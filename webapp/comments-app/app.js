@@ -36,28 +36,6 @@ function formatCount(count) {
   return `${count} ${word}`;
 }
 
-function getStorageKey(postId) {
-  return `comments:${postId}`;
-}
-
-function loadComments(postId) {
-  if (!postId) return [];
-
-  const raw = localStorage.getItem(getStorageKey(postId));
-  if (!raw) return [];
-
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveComments(postId, comments) {
-  localStorage.setItem(getStorageKey(postId), JSON.stringify(comments));
-}
-
 function createInitials(name) {
   const parts = String(name || '')
     .trim()
@@ -81,11 +59,6 @@ function formatTime(isoString) {
   });
 }
 
-function isAdminMode() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('admin') === '1';
-}
-
 function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -93,20 +66,6 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-}
-
-function createMockUserName() {
-  return 'Пользователь';
-}
-
-function createComment(text) {
-  return {
-    id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    userName: createMockUserName(),
-    text,
-    isDeleted: false,
-    createdAt: new Date().toISOString(),
-  };
 }
 
 function autoResizeTextarea(textarea) {
@@ -118,7 +77,8 @@ function renderComments(state) {
   const listEl = document.getElementById('commentsList');
   const countPillEl = document.getElementById('commentsCountPill');
 
-  countPillEl.textContent = formatCount(state.comments.length);
+  const visibleCount = state.comments.filter((item) => !item.isDeleted).length;
+  countPillEl.textContent = formatCount(visibleCount);
 
   if (state.comments.length === 0) {
     listEl.innerHTML = `
@@ -131,11 +91,6 @@ function renderComments(state) {
 
   listEl.innerHTML = state.comments
     .map((comment) => {
-      const deleteButton =
-        state.adminMode && !comment.isDeleted
-          ? `<button class="delete-btn" data-comment-id="${comment.id}" type="button">Удалить</button>`
-          : '';
-
       return `
         <div class="comment-item">
           <div class="avatar">${createInitials(comment.userName)}</div>
@@ -153,7 +108,7 @@ function renderComments(state) {
 
             <div class="comment-meta">
               <div class="comment-time">${formatTime(comment.createdAt)}</div>
-              <div class="comment-actions">${deleteButton}</div>
+              <div class="comment-actions"></div>
             </div>
           </div>
         </div>
@@ -162,10 +117,46 @@ function renderComments(state) {
     .join('');
 }
 
-function init() {
+async function apiGetComments(postId) {
+  const response = await fetch(`/api/comments?postId=${encodeURIComponent(postId)}`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    throw new Error(`GET /api/comments failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function apiCreateComment(postId, text) {
+  const response = await fetch('/api/comments', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      postId,
+      text,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`POST /api/comments failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function refreshComments(state) {
+  const data = await apiGetComments(state.postId);
+  state.comments = Array.isArray(data.comments) ? data.comments : [];
+  renderComments(state);
+}
+
+async function init() {
   const startParam = getStartParam();
   const postId = extractPostId(startParam);
-  const adminMode = isAdminMode();
 
   const subtitleEl = document.getElementById('postIdSubtitle');
   const backBtn = document.getElementById('backBtn');
@@ -176,15 +167,24 @@ function init() {
   const state = {
     startParam,
     postId,
-    adminMode,
-    comments: loadComments(postId),
+    comments: [],
+    sending: false,
   };
 
   subtitleEl.textContent = postId
     ? `Пост: ${postId}`
     : 'Контекст поста не передан';
 
-  renderComments(state);
+  if (postId) {
+    try {
+      await refreshComments(state);
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось загрузить комментарии.');
+    }
+  } else {
+    renderComments(state);
+  }
 
   inputEl.addEventListener('input', () => {
     autoResizeTextarea(inputEl);
@@ -199,7 +199,7 @@ function init() {
     }, 250);
   });
 
-  sendBtn.addEventListener('click', () => {
+  sendBtn.addEventListener('click', async () => {
     const text = inputEl.value.trim();
 
     if (!postId) {
@@ -207,7 +207,7 @@ function init() {
       return;
     }
 
-    if (!text) {
+    if (!text || state.sending) {
       return;
     }
 
@@ -216,25 +216,40 @@ function init() {
       return;
     }
 
-    const comment = createComment(text);
-    state.comments.push(comment);
-    saveComments(postId, state.comments);
-    renderComments(state);
+    state.sending = true;
+    sendBtn.disabled = true;
 
-    inputEl.value = '';
-    autoResizeTextarea(inputEl);
+    try {
+      await apiCreateComment(postId, text);
+      inputEl.value = '';
+      autoResizeTextarea(inputEl);
 
-    setTimeout(() => {
-      window.scrollTo({
-        top: document.body.scrollHeight,
-        behavior: 'smooth',
-      });
-    }, 50);
+      await refreshComments(state);
+
+      setTimeout(() => {
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: 'smooth',
+        });
+      }, 50);
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось отправить комментарий.');
+    } finally {
+      state.sending = false;
+      sendBtn.disabled = false;
+    }
   });
 
-  refreshBtn.addEventListener('click', () => {
-    state.comments = loadComments(postId);
-    renderComments(state);
+  refreshBtn.addEventListener('click', async () => {
+    if (!postId) return;
+
+    try {
+      await refreshComments(state);
+    } catch (error) {
+      console.error(error);
+      alert('Не удалось обновить комментарии.');
+    }
   });
 
   backBtn.addEventListener('click', () => {
@@ -244,21 +259,6 @@ function init() {
     }
 
     window.location.href = 'https://max.ru';
-  });
-
-  document.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-
-    const commentId = target.dataset.commentId;
-    if (!commentId) return;
-
-    const comment = state.comments.find((item) => item.id === commentId);
-    if (!comment) return;
-
-    comment.isDeleted = true;
-    saveComments(postId, state.comments);
-    renderComments(state);
   });
 }
 
