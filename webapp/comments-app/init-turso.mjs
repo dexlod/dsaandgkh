@@ -56,6 +56,58 @@ async function main() {
     ON posts(public_id)
   `);
 
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS drafts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_id TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by_user_id INTEGER NOT NULL,
+      created_by_user_name TEXT NOT NULL,
+      text TEXT,
+      quote_text TEXT,
+      quote_author TEXT,
+      source_message_id TEXT,
+      source_chat_type TEXT,
+      source_chat_id TEXT,
+      raw_update_json TEXT NOT NULL,
+      raw_message_json TEXT NOT NULL,
+      attachments_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      published_post_id TEXT,
+      deleted_at TEXT,
+      scheduled_for TEXT,
+      last_error TEXT
+    )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_drafts_public_id
+    ON drafts(public_id)
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_drafts_status_created_at
+    ON drafts(status, created_at)
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS draft_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      draft_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      actor_user_id INTEGER,
+      actor_user_name TEXT,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_draft_events_draft_id_created_at
+    ON draft_events(draft_id, created_at)
+  `);
+
   const result = await db.execute(`
     SELECT name
     FROM sqlite_master
