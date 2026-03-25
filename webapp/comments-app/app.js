@@ -74,7 +74,64 @@ function escapeHtml(value) {
 
 function autoResizeTextarea(textarea) {
   textarea.style.height = 'auto';
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+}
+
+function renderAvatar(comment) {
+  if (comment.userPhotoUrl) {
+    return `<img src="${escapeHtml(comment.userPhotoUrl)}" alt="${escapeHtml(comment.userName)}" />`;
+  }
+
+  return createInitials(comment.userName);
+}
+
+function renderPost(state) {
+  const postTextEl = document.getElementById('postText');
+  const postMediaGridEl = document.getElementById('postMediaGrid');
+  const postMediaMetaEl = document.getElementById('postMediaMeta');
+
+  if (!state.post) {
+    postTextEl.textContent = 'Публикация не найдена.';
+    postMediaGridEl.innerHTML = '';
+    postMediaMetaEl.innerHTML = '';
+    return;
+  }
+
+  postTextEl.textContent = state.post.text || '';
+
+  const imageAttachments = state.post.attachments.filter((item) => item.imageUrl);
+  const otherAttachments = state.post.attachments.filter((item) => !item.imageUrl);
+
+  postMediaGridEl.innerHTML = imageAttachments
+    .slice(0, 4)
+    .map(
+      (item) => `
+        <div class="post-media-item">
+          <img src="${escapeHtml(item.imageUrl)}" alt="media" loading="lazy" />
+        </div>
+      `,
+    )
+    .join('');
+
+  const chips = [];
+
+  if (imageAttachments.length > 4) {
+    chips.push(`Ещё изображений: ${imageAttachments.length - 4}`);
+  }
+
+  const otherCounts = new Map();
+  for (const item of otherAttachments) {
+    const type = item.type || 'unknown';
+    otherCounts.set(type, (otherCounts.get(type) || 0) + 1);
+  }
+
+  for (const [type, count] of otherCounts.entries()) {
+    chips.push(`${type} ×${count}`);
+  }
+
+  postMediaMetaEl.innerHTML = chips
+    .map((text) => `<span class="post-media-chip">${escapeHtml(text)}</span>`)
+    .join('');
 }
 
 function renderComments(state) {
@@ -102,7 +159,7 @@ function renderComments(state) {
 
       return `
         <div class="comment-item">
-          <div class="avatar">${createInitials(comment.userName)}</div>
+          <div class="avatar">${renderAvatar(comment)}</div>
 
           <div class="comment-bubble">
             <div class="comment-author">${escapeHtml(comment.userName)}</div>
@@ -185,6 +242,8 @@ async function refreshComments(state) {
   const data = await apiGetComments(state.postId, state.initData);
   state.comments = Array.isArray(data.comments) ? data.comments : [];
   state.viewer = data.viewer || null;
+  state.post = data.post || null;
+  renderPost(state);
   renderComments(state);
 }
 
@@ -193,8 +252,6 @@ async function init() {
   const startParam = getStartParam();
   const postId = extractPostId(startParam);
 
-  const subtitleEl = document.getElementById('postIdSubtitle');
-  const backBtn = document.getElementById('backBtn');
   const refreshBtn = document.getElementById('refreshBtn');
   const inputEl = document.getElementById('commentInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -205,12 +262,9 @@ async function init() {
     postId,
     comments: [],
     viewer: null,
+    post: null,
     sending: false,
   };
-
-  subtitleEl.textContent = postId
-    ? `Пост: ${postId}`
-    : 'Контекст поста не передан';
 
   if (postId) {
     try {
@@ -220,6 +274,7 @@ async function init() {
       alert('Не удалось загрузить комментарии.');
     }
   } else {
+    renderPost(state);
     renderComments(state);
   }
 
@@ -314,23 +369,8 @@ async function init() {
     }
   });
 
-  backBtn.addEventListener('click', () => {
-    if (window.history.length > 1) {
-      window.history.back();
-      return;
-    }
-
-    if (window.WebApp?.close) {
-      window.WebApp.close();
-      return;
-    }
-
-    window.location.href = 'https://max.ru';
-  });
-
   if (window.WebApp?.ready) {
     window.WebApp.ready();
   }
 }
-
 init();
