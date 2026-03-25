@@ -13,39 +13,33 @@
     <div class="app">
       <header class="topbar">
         <button class="back-btn" id="backBtn" type="button">←</button>
-        <div class="title-block">
-          <div class="title">Комментарии</div>
-          <div class="subtitle" id="subtitle">Загрузка...</div>
+
+        <div class="topbar-center">
+          <div class="comments-count-pill" id="commentsCountPill">0 комментариев</div>
         </div>
+
+        <button class="icon-btn" id="refreshBtn" type="button" title="Обновить">⟳</button>
       </header>
 
       <main class="content">
-        <section class="card">
-          <div class="label">Post ID</div>
-          <div class="value" id="postIdValue">—</div>
+        <section class="meta-card">
+          <div class="meta-title">Обсуждение новости</div>
+          <div class="meta-subtitle" id="postIdSubtitle">Загрузка...</div>
         </section>
 
-        <section class="card">
-          <div class="label">Payload</div>
-          <div class="value mono" id="payloadValue">—</div>
-        </section>
-
-        <section class="card">
-          <div class="label">Статус</div>
-          <div class="value">
-            Это первый экран mini app. Следующим этапом сюда подключим список
-            комментариев и форму отправки.
-          </div>
-        </section>
-
-        <section class="card muted">
-          <div class="label">Важно</div>
-          <div class="value">
-            Комментарии ещё не активны. Сейчас мы проверяем открытие mini app и
-            получение контекста поста.
-          </div>
-        </section>
+        <section class="comments-list" id="commentsList"></section>
       </main>
+
+      <footer class="composer">
+        <textarea
+          id="commentInput"
+          class="composer-input"
+          rows="1"
+          placeholder="Написать комментарий..."
+          maxlength="1000"
+        ></textarea>
+        <button id="sendBtn" class="send-btn" type="button">➤</button>
+      </footer>
     </div>
 
     <script src="./app.js"></script>
