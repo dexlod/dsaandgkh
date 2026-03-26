@@ -6,37 +6,85 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title>Комментарии</title>
+    <title>ДСАиЖКХ Ханты-Мансийского района</title>
     <script src="https://st.max.ru/js/max-web-app.js"></script>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div class="app">
-      <header class="topbar">
-        <div class="comments-count-pill" id="commentsCountPill">0 комментариев</div>
-        <button class="icon-btn" id="refreshBtn" type="button" title="Обновить">⟳</button>
-      </header>
+      <main id="landingView" class="landing-view hidden">
+        <section class="landing-shell">
+          <header class="landing-hero">
+            <div class="landing-eyebrow">Официальный информационный контур</div>
+            <h1 class="landing-title">
+              Департамент строительства, архитектуры и ЖКХ Ханты-Мансийского района
+            </h1>
+            <p class="landing-subtitle">
+              Координация строительства и ремонта объектов, сопровождение коммунальной
+              инфраструктуры, развитие инженерных систем и организация устойчивой
+              работы подведомственных направлений района.
+            </p>
+          </header>
 
-      <main class="content">
-        <section class="post-card" id="postCard">
-          <div class="post-card-text" id="postText">Загрузка публикации...</div>
-          <div class="post-media-grid" id="postMediaGrid"></div>
-          <div class="post-media-meta" id="postMediaMeta"></div>
+          <section class="landing-tabs-section">
+            <div class="landing-tabs" id="landingTabs">
+              <button
+                type="button"
+                class="landing-tab is-active"
+                data-tab="uksir"
+              >
+                УКСиР
+              </button>
+              <button
+                type="button"
+                class="landing-tab"
+                data-tab="zhek3"
+              >
+                ЖЭК-3
+              </button>
+            </div>
+
+            <article class="landing-card" id="landingCard">
+              <div class="landing-card-header">
+                <h2 class="landing-card-title" id="landingCardTitle"></h2>
+                <div class="landing-card-badge" id="landingCardBadge"></div>
+              </div>
+
+              <p class="landing-card-description" id="landingCardDescription"></p>
+
+              <div class="landing-points" id="landingPoints"></div>
+            </article>
+          </section>
         </section>
-
-        <section class="comments-list" id="commentsList"></section>
       </main>
 
-      <footer class="composer">
-        <textarea
-          id="commentInput"
-          class="composer-input"
-          rows="1"
-          placeholder="Написать комментарий..."
-          maxlength="1000"
-        ></textarea>
-        <button id="sendBtn" class="send-btn" type="button">➤</button>
-      </footer>
+      <main id="commentsView" class="comments-view hidden">
+        <header class="topbar">
+          <div class="comments-count-pill" id="commentsCountPill">0 комментариев</div>
+          <button class="icon-btn" id="refreshBtn" type="button" title="Обновить">⟳</button>
+        </header>
+
+        <section class="content">
+          <section class="post-card" id="postCard">
+            <div class="post-card-text" id="postText">Загрузка публикации...</div>
+            <div class="post-media-grid" id="postMediaGrid"></div>
+            <div class="post-media-meta" id="postMediaMeta"></div>
+          </section>
+
+          <section class="comments-list" id="commentsList"></section>
+        </section>
+
+        <footer class="composer">
+          <textarea
+            id="commentInput"
+            class="composer-input"
+            rows="1"
+            placeholder="Написать комментарий..."
+            maxlength="1000"
+          ></textarea>
+          <button id="sendBtn" class="send-btn" type="button">➤</button>
+        </footer>
+      </main>
     </div>
 
     <script src="./app.js"></script>

@@ -1,3 +1,46 @@
+const LANDING_TABS = {
+  uksir: {
+    title: 'УКСиР',
+    badge: 'Капитальное строительство и ремонт',
+    description:
+      'Блок, обеспечивающий сопровождение строительства, ремонта и обновления объектов, участие в подготовке технических решений и контроль движения работ по профильным направлениям.',
+    points: [
+      {
+        title: 'Ключевой фокус',
+        text: 'Подготовка и сопровождение объектов строительства и ремонта, координация исполнения и контроль прохождения этапов работ.',
+      },
+      {
+        title: 'Что входит в контур',
+        text: 'Строительные и ремонтные мероприятия, документационное сопровождение, взаимодействие с подрядным и инженерным блоком.',
+      },
+      {
+        title: 'Практический результат',
+        text: 'Своевременное продвижение объектов, снижение организационных разрывов и поддержание понятного статуса по каждому проекту.',
+      },
+    ],
+  },
+  zhek3: {
+    title: 'МП «ЖЭК-3»',
+    badge: 'Коммунальная инфраструктура',
+    description:
+      'Ресурсный и эксплуатационный контур, обеспечивающий работу коммунальных направлений, сопровождение инженерных систем и решение прикладных вопросов жителей и организаций.',
+    points: [
+      {
+        title: 'Ключевой фокус',
+        text: 'Сопровождение направлений теплоснабжения, водоснабжения, водоотведения и смежных эксплуатационных процессов.',
+      },
+      {
+        title: 'Что входит в контур',
+        text: 'Работа с обращениями, взаимодействие с абонентами, эксплуатационные вопросы, организация устойчивой работы коммунальной инфраструктуры.',
+      },
+      {
+        title: 'Практический результат',
+        text: 'Более стабильная работа систем, понятная коммуникация с жителями и оперативная отработка прикладных вопросов на местах.',
+      },
+    ],
+  },
+};
+
 function getInitData() {
   return window.WebApp?.initData || window.WebApp?.InitData || '';
 }
@@ -74,7 +117,35 @@ function escapeHtml(value) {
 
 function autoResizeTextarea(textarea) {
   textarea.style.height = 'auto';
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 96)}px`;
+}
+
+function renderLanding(tabKey) {
+  const config = LANDING_TABS[tabKey] || LANDING_TABS.uksir;
+  const cardTitleEl = document.getElementById('landingCardTitle');
+  const cardBadgeEl = document.getElementById('landingCardBadge');
+  const cardDescriptionEl = document.getElementById('landingCardDescription');
+  const pointsEl = document.getElementById('landingPoints');
+  const tabEls = document.querySelectorAll('.landing-tab');
+
+  cardTitleEl.textContent = config.title;
+  cardBadgeEl.textContent = config.badge;
+  cardDescriptionEl.textContent = config.description;
+
+  pointsEl.innerHTML = config.points
+    .map(
+      (point) => `
+        <div class="landing-point">
+          <h3 class="landing-point-title">${escapeHtml(point.title)}</h3>
+          <p class="landing-point-text">${escapeHtml(point.text)}</p>
+        </div>
+      `,
+    )
+    .join('');
+
+  tabEls.forEach((button) => {
+    button.classList.toggle('is-active', button.dataset.tab === tabKey);
+  });
 }
 
 function renderAvatar(comment) {
@@ -234,10 +305,40 @@ async function refreshComments(state) {
   renderComments(state);
 }
 
+function showLandingMode() {
+  document.getElementById('landingView').classList.remove('hidden');
+  document.getElementById('commentsView').classList.add('hidden');
+}
+
+function showCommentsMode() {
+  document.getElementById('landingView').classList.add('hidden');
+  document.getElementById('commentsView').classList.remove('hidden');
+}
+
 async function init() {
   const initData = getInitData();
   const startParam = getStartParam();
   const postId = extractPostId(startParam);
+
+  if (!postId) {
+    showLandingMode();
+    renderLanding('uksir');
+
+    document.getElementById('landingTabs').addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const tab = target.dataset.tab;
+      if (!tab) return;
+      renderLanding(tab);
+    });
+
+    if (window.WebApp?.ready) {
+      window.WebApp.ready();
+    }
+    return;
+  }
+
+  showCommentsMode();
 
   const refreshBtn = document.getElementById('refreshBtn');
   const inputEl = document.getElementById('commentInput');
@@ -253,16 +354,11 @@ async function init() {
     sending: false,
   };
 
-  if (postId) {
-    try {
-      await refreshComments(state);
-    } catch (error) {
-      console.error(error);
-      alert('Не удалось загрузить комментарии.');
-    }
-  } else {
-    renderPost(state);
-    renderComments(state);
+  try {
+    await refreshComments(state);
+  } catch (error) {
+    console.error(error);
+    alert('Не удалось загрузить комментарии.');
   }
 
   inputEl.addEventListener('input', () => {
@@ -326,8 +422,6 @@ async function init() {
   });
 
   refreshBtn.addEventListener('click', async () => {
-    if (!postId) return;
-
     try {
       await refreshComments(state);
     } catch (error) {
@@ -360,4 +454,5 @@ async function init() {
     window.WebApp.ready();
   }
 }
+
 init();
