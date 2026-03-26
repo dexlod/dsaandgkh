@@ -327,13 +327,21 @@ function formatDeletedDraftCard(draft) {
 }
 
 function formatAppealForOperators(appeal) {
+  const textBlock = appeal.text
+    ? appeal.text
+    : 'Без текста. Пользователь отправил только вложения.';
+
+  const summary = summarizeAttachments(appeal.attachments || []);
+
   return [
-    '**Новое обращение**',
+    'Новое обращение',
     '',
-    `**Номер:** ${escapeMarkdown(appeal.publicId)}`,
-    `**Пользователь:** ${escapeMarkdown(appeal.userName)}`,
+    `Номер: ${appeal.publicId}`,
+    `Пользователь: ${appeal.userName}`,
+    `Вложений: ${summary.total}`,
+    `Типы: ${summary.line}`,
     '',
-    escapeMarkdown(appeal.text),
+    textBlock,
   ].join('\n');
 }
 
@@ -375,6 +383,40 @@ function buildUserStartKeyboard() {
       },
     },
   ];
+}
+
+function buildUserLinksKeyboard() {
+  const channelUrl = process.env.CHANNEL_PUBLIC_URL;
+  const vkUrl = process.env.VK_GROUP_URL;
+
+  const row = [];
+
+  if (channelUrl) {
+    row.push({
+      type: 'link',
+      text: 'Канал MAX',
+      url: channelUrl,
+    });
+  }
+
+  if (vkUrl) {
+    row.push({
+      type: 'link',
+      text: 'Группа VK',
+      url: vkUrl,
+    });
+  }
+
+  return row.length
+    ? [
+        {
+          type: 'inline_keyboard',
+          payload: {
+            buttons: [row],
+          },
+        },
+      ]
+    : [];
 }
 
 function buildUserStartText() {
@@ -526,6 +568,7 @@ async function saveAppeal(update) {
 
   const publicId = buildAppealId();
   const text = normalizeText(body.text || '');
+  const attachments = body.attachments || [];
 
   await db.execute({
     sql: `
@@ -535,11 +578,22 @@ async function saveAppeal(update) {
         user_id,
         user_name,
         text,
+        attachments_json,
+        raw_message_json,
+        raw_update_json,
         created_at
       )
-      VALUES (?, 'NEW', ?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES (?, 'NEW', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `,
-    args: [publicId, sender.user_id, extractDisplayName(sender), text],
+    args: [
+      publicId,
+      sender.user_id,
+      extractDisplayName(sender),
+      text,
+      safeStringify(attachments, '[]'),
+      safeStringify(message, '{}'),
+      safeStringify(update, '{}'),
+    ],
   });
 
   return {
@@ -547,6 +601,7 @@ async function saveAppeal(update) {
     userId: sender.user_id,
     userName: extractDisplayName(sender),
     text,
+    attachments,
   };
 }
 
@@ -845,7 +900,7 @@ async function handleMessageCreated(update, res) {
   if (!isAdminUser(sender.user_id) && text === 'Оставить обращение') {
     await sendMessageToUser(sender.user_id, {
       text: buildAppealPromptText(),
-      attachments: buildUserStartKeyboard(),
+      attachments: buildUserLinksKeyboard(),
     });
 
     return sendJson(res, 200, { ok: true, mode: 'appeal-prompt' });
@@ -876,30 +931,33 @@ async function handleMessageCreated(update, res) {
   }
 
   // Не-админ -> обращение
-  if (!text) {
-    if (attachments.length > 0) {
-      await sendMessageToUser(sender.user_id, {
-        text: 'Пока обращения принимаются текстом. Добавьте текст к сообщению и отправьте снова.',
-      });
-      return sendJson(res, 200, { ok: true, ignored: 'empty-appeal-with-attachments' });
-    }
-
+  if (!text && attachments.length === 0) {
     await sendMessageToUser(sender.user_id, {
-      text: 'Пожалуйста, напишите текст обращения.',
+      text: buildAppealPromptText(),
+      attachments: buildUserLinksKeyboard(),
     });
 
     return sendJson(res, 200, { ok: true, ignored: 'empty-appeal' });
   }
 
   const appeal = await saveAppeal(update);
+  const outgoingAttachments = normalizeOutgoingAttachments(appeal.attachments || []);
 
   try {
     await sendMessageToChat(process.env.OPERATORS_CHAT_ID, {
       text: formatAppealForOperators(appeal),
-      format: 'markdown',
+      attachments: outgoingAttachments,
     });
   } catch (error) {
-    console.error('Failed to forward appeal to operators chat', error);
+    console.error('Failed to forward appeal with attachments to operators chat', error);
+
+    try {
+      await sendMessageToChat(process.env.OPERATORS_CHAT_ID, {
+        text: formatAppealForOperators(appeal),
+      });
+    } catch (fallbackError) {
+      console.error('Failed to forward appeal text-only to operators chat', fallbackError);
+    }
   }
 
   await sendMessageToUser(sender.user_id, {
@@ -908,6 +966,7 @@ async function handleMessageCreated(update, res) {
       `Номер обращения: ${appeal.publicId}`,
       'Сохраните этот номер.',
     ].join('\n'),
+    attachments: buildUserLinksKeyboard(),
   });
 
   return sendJson(res, 200, { ok: true, mode: 'appeal', appealId: appeal.publicId });

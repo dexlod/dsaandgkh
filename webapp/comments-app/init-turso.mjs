@@ -167,6 +167,9 @@ async function ensureSchema() {
   await ensureColumn('drafts', 'scheduled_for', 'TEXT');
   await ensureColumn('drafts', 'last_error', 'TEXT');
   await ensureColumn('drafts', 'draft_card_message_id', 'TEXT');
+  await ensureColumn('appeals', 'attachments_json', "TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn('appeals', 'raw_message_json', 'TEXT');
+  await ensureColumn('appeals', 'raw_update_json', 'TEXT');
 }
 
 async function printTables() {
