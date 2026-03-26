@@ -337,6 +337,74 @@ function formatAppealForOperators(appeal) {
   ].join('\n');
 }
 
+
+function buildUserStartKeyboard() {
+  const channelUrl = process.env.CHANNEL_PUBLIC_URL;
+  const vkUrl = process.env.VK_GROUP_URL;
+
+  const firstRow = [
+    {
+      type: 'message',
+      text: 'Оставить обращение',
+    },
+  ];
+
+  const secondRow = [];
+
+  if (channelUrl) {
+    secondRow.push({
+      type: 'link',
+      text: 'Канал MAX',
+      url: channelUrl,
+    });
+  }
+
+  if (vkUrl) {
+    secondRow.push({
+      type: 'link',
+      text: 'Группа VK',
+      url: vkUrl,
+    });
+  }
+
+  return [
+    {
+      type: 'inline_keyboard',
+      payload: {
+        buttons: [firstRow, secondRow].filter((row) => row.length > 0),
+      },
+    },
+  ];
+}
+
+function buildUserStartText() {
+  return [
+    'Здравствуйте.',
+    '',
+    'Это официальный бот для обращений и связи с подписчиками.',
+    '',
+    'Здесь вы можете:',
+    '- оставить обращение',
+    '- перейти в официальный канал MAX',
+    '- перейти в группу ВКонтакте',
+    '',
+    'Обсуждение новостей доступно под публикациями в канале.',
+  ].join('\n');
+}
+
+
+
+function buildAppealPromptText() {
+  return [
+    'Напишите текст обращения одним сообщением.',
+    '',
+    'Постарайтесь кратко и по существу описать вопрос.',
+  ].join('\n');
+}
+
+
+
+
 async function setDraftCardMessageId(draftId, messageId) {
   await db.execute({
     sql: `
@@ -682,6 +750,38 @@ async function publishDraft(draft, actor) {
   };
 }
 
+
+async function handleBotStarted(update, res) {
+  const user = update.user || {};
+  const userId = user.user_id;
+
+  if (!userId) {
+    return sendJson(res, 200, { ok: true, ignored: 'bot-started-without-user' });
+  }
+
+  if (isAdminUser(userId)) {
+    await sendMessageToUser(userId, {
+      text: [
+        'Здравствуйте.',
+        'Вы авторизованы как администратор.',
+        '',
+        'Обычное сообщение в личке боту создаёт черновик поста.',
+      ].join('\n'),
+    });
+
+    return sendJson(res, 200, { ok: true, mode: 'admin-bot-started' });
+  }
+
+  await sendMessageToUser(userId, {
+    text: buildUserStartText(),
+    attachments: buildUserStartKeyboard(),
+  });
+
+  return sendJson(res, 200, { ok: true, mode: 'user-bot-started' });
+}
+
+
+
 async function handleMessageCreated(update, res) {
   const message = update.message || {};
   const recipient = message.recipient || {};
@@ -700,30 +800,57 @@ async function handleMessageCreated(update, res) {
   }
 
   if (text.startsWith('/start')) {
-    await sendMessageToUser(sender.user_id, {
-      text: [
-        'Здравствуйте.',
-        'Это бот для обращений и редакционной работы.',
-        '',
-        'Админ: любое обычное сообщение создаёт черновик.',
-        'Пользователь: обычное сообщение создаёт обращение.',
-      ].join('\n'),
-    });
+    if (isAdminUser(sender.user_id)) {
+      await sendMessageToUser(sender.user_id, {
+        text: [
+          'Здравствуйте.',
+          'Вы авторизованы как администратор.',
+          '',
+          'Обычное сообщение в личке боту создаёт черновик поста.',
+        ].join('\n'),
+      });
 
-    return sendJson(res, 200, { ok: true });
-  }
+      return sendJson(res, 200, { ok: true, mode: 'admin-start' });
+    }
+
+  await sendMessageToUser(sender.user_id, {
+    text: buildUserStartText(),
+    attachments: buildUserStartKeyboard(),
+  });
+
+  return sendJson(res, 200, { ok: true, mode: 'user-start' });
+}
 
   if (text.startsWith('/help')) {
+    if (isAdminUser(sender.user_id)) {
+      await sendMessageToUser(sender.user_id, {
+        text: [
+          'Памятка для администратора:',
+          '- обычное сообщение создаёт черновик',
+          '- далее можно опубликовать или удалить черновик',
+        ].join('\n'),
+      });
+
+      return sendJson(res, 200, { ok: true, mode: 'admin-help' });
+    }
+
     await sendMessageToUser(sender.user_id, {
-      text: [
-        'Памятка:',
-        '— админ: отправляет обычное сообщение и получает черновик',
-        '— пользователь: отправляет обычное сообщение и получает номер обращения',
-      ].join('\n'),
+      text: buildUserStartText(),
+      attachments: buildUserStartKeyboard(),
     });
 
-    return sendJson(res, 200, { ok: true });
+    return sendJson(res, 200, { ok: true, mode: 'user-help' });
   }
+
+  if (!isAdminUser(sender.user_id) && text === 'Оставить обращение') {
+    await sendMessageToUser(sender.user_id, {
+      text: buildAppealPromptText(),
+      attachments: buildUserStartKeyboard(),
+    });
+
+    return sendJson(res, 200, { ok: true, mode: 'appeal-prompt' });
+  }
+
 
   // Другие slash-команды не превращаем ни в черновик, ни в обращение
   if (text.startsWith('/')) {
@@ -931,6 +1058,10 @@ export default async function handler(req, res) {
 
     if (update.update_type === 'message_callback') {
       return await handleMessageCallback(update, res);
+    }
+
+    if (update.update_type === 'bot_started') {
+      return await handleBotStarted(update, res);
     }
 
     return sendJson(res, 200, { ok: true, ignored: update.update_type || 'unknown-update' });

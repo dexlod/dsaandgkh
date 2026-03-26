@@ -15,10 +15,11 @@ const response = await fetch('https://platform-api.max.ru/subscriptions', {
   },
   body: JSON.stringify({
     url: webhookUrl,
-    update_types: ['message_created', 'message_callback'],
+    update_types: ['message_created', 'message_callback', 'bot_started'],
     secret,
   }),
 });
 
 const text = await response.text();
-console.log(response.status, text);
+console.log('Status:', response.status);
+console.log(text);
