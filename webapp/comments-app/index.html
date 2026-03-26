@@ -13,11 +13,42 @@
   <body>
     <div class="app">
       <header class="topbar">
-        <div class="comments-count-pill" id="commentsCountPill">0 комментариев</div>
-        <button class="icon-btn" id="refreshBtn" type="button" title="Обновить">⟳</button>
+        <div class="topbar-pill" id="commentsCountPill">0 комментариев</div>
       </header>
 
       <main class="content">
+        <section class="home-screen" id="homeScreen" hidden>
+          <div class="hero-card">
+            <div class="hero-badge">Официальный бот</div>
+            <h1 class="hero-title">Добро пожаловать</h1>
+            <p class="hero-text" id="heroText"></p>
+            <div class="hero-points" id="heroPoints"></div>
+          </div>
+
+          <section class="tabs-card">
+            <div class="tabs-header">
+              <div class="tabs-title">Подведомственные учреждения</div>
+              <div class="tabs-subtitle">
+                Краткая информация по ключевым организациям департамента
+              </div>
+            </div>
+
+            <div class="tabs-switcher" id="enterpriseTabs"></div>
+
+            <div class="enterprise-card" id="enterpriseCard">
+              <div class="enterprise-image-wrap">
+                <img id="enterpriseImage" class="enterprise-image" alt="" />
+              </div>
+
+              <div class="enterprise-body">
+                <div class="enterprise-name" id="enterpriseName"></div>
+                <div class="enterprise-description" id="enterpriseDescription"></div>
+                <div class="enterprise-features" id="enterpriseFeatures"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+
         <section class="post-card" id="postCard">
           <div class="post-card-text" id="postText">Загрузка публикации...</div>
           <div class="post-media-grid" id="postMediaGrid"></div>
@@ -27,7 +58,7 @@
         <section class="comments-list" id="commentsList"></section>
       </main>
 
-      <footer class="composer">
+      <footer class="composer" id="composer">
         <textarea
           id="commentInput"
           class="composer-input"
