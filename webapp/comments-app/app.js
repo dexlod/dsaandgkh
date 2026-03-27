@@ -45,19 +45,134 @@ function getInitData() {
   return window.WebApp?.initData || window.WebApp?.InitData || '';
 }
 
+function safeDecode(value) {
+  let result = String(value || '').trim();
+
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const decoded = decodeURIComponent(result);
+      if (decoded === result) break;
+      result = decoded;
+    } catch {
+      break;
+    }
+  }
+
+  return result;
+}
+
+function collectStartParamsFromParams(params) {
+  return [
+    params.get('WebAppStartParam'),
+    params.get('webAppStartParam'),
+    params.get('startapp'),
+    params.get('startApp'),
+    params.get('start_param'),
+    params.get('startParam'),
+    params.get('postId'),
+    params.get('post_id'),
+  ].filter((value) => typeof value === 'string' && value.trim());
+}
+
+function addStartParamCandidate(bucket, rawValue) {
+  const value = safeDecode(rawValue);
+  if (!value || bucket.has(value)) {
+    return;
+  }
+
+  bucket.add(value);
+
+  const normalized = value.replace(/^[?#]/, '').trim();
+  if (normalized && !bucket.has(normalized)) {
+    bucket.add(normalized);
+  }
+
+  if (normalized.includes('=')) {
+    const nestedParams = new URLSearchParams(normalized);
+    collectStartParamsFromParams(nestedParams).forEach((item) => {
+      addStartParamCandidate(bucket, item);
+    });
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    try {
+      const nestedUrl = new URL(normalized);
+
+      collectStartParamsFromParams(nestedUrl.searchParams).forEach((item) => {
+        addStartParamCandidate(bucket, item);
+      });
+
+      const hashParams = new URLSearchParams(nestedUrl.hash.replace(/^#/, ''));
+      collectStartParamsFromParams(hashParams).forEach((item) => {
+        addStartParamCandidate(bucket, item);
+      });
+    } catch {
+      // ignore invalid nested URL
+    }
+  }
+}
+
+function extractPostId(startParam) {
+  const normalized = safeDecode(startParam).trim();
+  if (!normalized) return '';
+
+  const postIdMatch = normalized.match(/\bPST-\d{8}-\d{5}\b/i);
+  const looksLikePostContext =
+    normalized.startsWith('post-') ||
+    /^PST-\d{8}-\d{5}$/i.test(normalized) ||
+    /(?:^|[?&#])(postId|post_id)=/i.test(normalized);
+
+  if (!looksLikePostContext || !postIdMatch) {
+    return '';
+  }
+
+  return postIdMatch[0].toUpperCase();
+}
+
+function getLaunchContext() {
+  const bucket = new Set();
+
+  addStartParamCandidate(bucket, window.WebApp?.initDataUnsafe?.start_param);
+
+  const searchParams = new URLSearchParams(window.location.search);
+  collectStartParamsFromParams(searchParams).forEach((item) => {
+    addStartParamCandidate(bucket, item);
+  });
+
+  const hashRaw = window.location.hash.replace(/^#/, '');
+  if (hashRaw) {
+    addStartParamCandidate(bucket, hashRaw);
+
+    const hashParams = new URLSearchParams(hashRaw);
+    collectStartParamsFromParams(hashParams).forEach((item) => {
+      addStartParamCandidate(bucket, item);
+    });
+  }
+
+  const candidates = [...bucket]
+    .map((item) => safeDecode(item).trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const postId = extractPostId(candidate);
+    if (postId) {
+      return {
+        startParam: candidate,
+        postId,
+        candidates,
+      };
+    }
+  }
+
+  return {
+    startParam: candidates[0] || '',
+    postId: '',
+    candidates,
+  };
+}
+
 function getStartParam() {
-  const fromWebApp = window.WebApp?.initDataUnsafe?.start_param;
-  if (fromWebApp) return fromWebApp;
-
-  const params = new URLSearchParams(window.location.search);
-
-  const fromQuery = params.get('WebAppStartParam');
-  if (fromQuery) return fromQuery;
-
-  const fallback = params.get('startapp');
-  if (fallback) return fallback;
-
-  return '';
+  return getLaunchContext().startParam;
 }
 
 function extractPostId(startParam) {
@@ -241,20 +356,43 @@ function renderComments(state) {
     .join('');
 }
 
-async function apiGetComments(postId, initData) {
-  const url = `/api/comments?postId=${encodeURIComponent(postId)}${
-    initData ? `&initData=${encodeURIComponent(initData)}` : ''
-  }`;
+async function readApiResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
 
-  const response = await fetch(url, {
-    method: 'GET',
-  });
-
-  if (!response.ok) {
-    throw new Error(`GET /api/comments failed: ${response.status}`);
+  if (contentType.includes('application/json')) {
+    return response.json();
   }
 
-  return response.json();
+  const text = await response.text();
+  return text ? { error: text } : {};
+}
+
+async function apiGetComments(postId, initData) {
+  const headers = {};
+
+  if (initData) {
+    headers['x-max-init-data'] = initData;
+  }
+
+  const response = await fetch(
+    url: `https://max.ru/${env.BOT_USERNAME}?startapp=${encodeURIComponent(post.discussionPayload)}`,
+    {
+      method: 'GET',
+      headers,
+    },
+  );
+
+  const payload = await readApiResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.details ||
+        payload?.error ||
+        `GET /api/comments failed: ${response.status}`,
+    );
+  }
+
+  return payload;
 }
 
 async function apiCreateComment(postId, text, initData) {
@@ -315,12 +453,64 @@ function showCommentsMode() {
   document.getElementById('commentsView').classList.remove('hidden');
 }
 
+
+function setComposerDisabled(disabled) {
+  const inputEl = document.getElementById('commentInput');
+  const sendBtn = document.getElementById('sendBtn');
+
+  if (inputEl) {
+    inputEl.disabled = disabled;
+  }
+
+  if (sendBtn) {
+    sendBtn.disabled = disabled;
+  }
+}
+
+function renderCommentsLaunchError(message) {
+  showCommentsMode();
+  setComposerDisabled(true);
+
+  document.getElementById('postText').textContent = message;
+  document.getElementById('postMediaGrid').innerHTML = '';
+  document.getElementById('postMediaMeta').innerHTML = '';
+  document.getElementById('commentsCountPill').textContent = '0 комментариев';
+  document.getElementById('commentsList').innerHTML = `
+    <div class="empty-state">
+      ${escapeHtml(message)}
+    </div>
+  `;
+}
+
+
+
 async function init() {
   const initData = getInitData();
-  const startParam = getStartParam();
-  const postId = extractPostId(startParam);
+  const launchContext = getLaunchContext();
+  const startParam = launchContext.startParam;
+  const postId = launchContext.postId;
+  const hasExplicitLaunchContext = launchContext.candidates.length > 0;
 
   if (!postId) {
+    if (hasExplicitLaunchContext) {
+      console.warn('Unable to resolve postId from launch context', {
+        startParam,
+        candidates: launchContext.candidates,
+        search: window.location.search,
+        hash: window.location.hash,
+      });
+
+      renderCommentsLaunchError(
+        'Не удалось определить публикацию для комментариев. Откройте обсуждение повторно из кнопки под постом.',
+      );
+
+      if (window.WebApp?.ready) {
+        window.WebApp.ready();
+      }
+
+      return;
+    }
+
     showLandingMode();
     renderLanding('uksir');
 
@@ -339,6 +529,7 @@ async function init() {
   }
 
   showCommentsMode();
+  setComposerDisabled(false);
 
   const refreshBtn = document.getElementById('refreshBtn');
   const inputEl = document.getElementById('commentInput');
@@ -354,12 +545,21 @@ async function init() {
     sending: false,
   };
 
-  try {
-    await refreshComments(state);
-  } catch (error) {
-    console.error(error);
-    alert('Не удалось загрузить комментарии.');
-  }
+    try {
+      await refreshComments(state);
+    } catch (error) {
+      console.error(error);
+
+      renderCommentsLaunchError(
+        'Не удалось загрузить комментарии. Если публикация только что вышла, откройте обсуждение повторно через несколько секунд.',
+      );
+
+      if (window.WebApp?.ready) {
+        window.WebApp.ready();
+      }
+
+      return;
+    }
 
   inputEl.addEventListener('input', () => {
     autoResizeTextarea(inputEl);

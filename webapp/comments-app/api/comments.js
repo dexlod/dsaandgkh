@@ -60,7 +60,7 @@ function formatCommentsButtonText(count) {
 }
 
 function buildDiscussionLink(payload) {
-  return `https://max.ru/${process.env.BOT_USERNAME}?startapp=${payload}`;
+  return `https://max.ru/${process.env.BOT_USERNAME}?startapp=${encodeURIComponent(payload)}`;
 }
 
 function isEditableWithin24h(publishedAt) {
