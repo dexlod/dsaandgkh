@@ -241,19 +241,40 @@ function renderLanding(tabKey) {
   const pointsEl = document.getElementById('landingPoints');
   const tabEls = document.querySelectorAll('.landing-tab');
 
+  if (!cardTitleEl || !cardBadgeEl || !cardDescriptionEl || !pointsEl) {
+    console.error('Landing DOM nodes not found');
+    return;
+  }
+
   cardTitleEl.textContent = config.title;
   cardBadgeEl.textContent = config.badge;
   cardDescriptionEl.textContent = config.description;
 
   pointsEl.innerHTML = config.points
-    .map(
-      (point) => `
+    .map((point) => {
+      const textHtml = point.text
+        ? `<p class="landing-point-text">${escapeHtml(point.text)}</p>`
+        : '';
+
+      const itemsHtml =
+        Array.isArray(point.items) && point.items.length
+          ? `
+            <ul class="landing-point-list">
+              ${point.items
+                .map((item) => `<li>${escapeHtml(item)}</li>`)
+                .join('')}
+            </ul>
+          `
+          : '';
+
+      return `
         <div class="landing-point">
           <h3 class="landing-point-title">${escapeHtml(point.title)}</h3>
-          <p class="landing-point-text">${escapeHtml(point.text)}</p>
+          ${textHtml}
+          ${itemsHtml}
         </div>
-      `,
-    )
+      `;
+    })
     .join('');
 
   tabEls.forEach((button) => {
@@ -274,6 +295,11 @@ function renderPost(state) {
   const postMediaGridEl = document.getElementById('postMediaGrid');
   const postMediaMetaEl = document.getElementById('postMediaMeta');
 
+  if (!postTextEl || !postMediaGridEl || !postMediaMetaEl) {
+    console.error('Comments DOM nodes not found');
+    return;
+  }
+
   if (!state.post) {
     postTextEl.textContent = 'Публикация не найдена.';
     postMediaGridEl.innerHTML = '';
@@ -283,8 +309,12 @@ function renderPost(state) {
 
   postTextEl.textContent = state.post.text || '';
 
-  const imageAttachments = state.post.attachments.filter(
-    (item) => item.kind === 'image' && item.imageUrl,
+  const attachments = Array.isArray(state.post.attachments)
+    ? state.post.attachments
+    : [];
+
+  const imageAttachments = attachments.filter(
+    (item) => item && item.kind === 'image' && item.imageUrl,
   );
 
   postMediaGridEl.innerHTML = imageAttachments
@@ -512,13 +542,17 @@ async function init() {
     showLandingMode();
     renderLanding('uksir');
 
-    document.getElementById('landingTabs').addEventListener('click', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const tab = target.dataset.tab;
-      if (!tab) return;
-      renderLanding(tab);
-    });
+    const landingTabsEl = document.getElementById('landingTabs');
+
+    if (landingTabsEl) {
+      landingTabsEl.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const tab = target.dataset.tab;
+        if (!tab) return;
+        renderLanding(tab);
+      });
+    }
 
     if (window.WebApp?.ready) {
       window.WebApp.ready();
@@ -532,6 +566,14 @@ async function init() {
   const refreshBtn = document.getElementById('refreshBtn');
   const inputEl = document.getElementById('commentInput');
   const sendBtn = document.getElementById('sendBtn');
+
+
+  if (!refreshBtn || !inputEl || !sendBtn) {
+    console.error('Comments controls not found');
+    return;
+  }
+
+
 
   const state = {
     initData,
