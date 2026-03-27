@@ -12,11 +12,11 @@ const LANDING_TABS = {
       {
         title: 'Основные направления работы',
         items: [
-          '- Строительство и капитальный ремонт социальных, коммунальных и инфраструктурных объектов;',
-          '- сопровождение проектной документации и технических решений;',
-          '- взаимодействие с подрядными организациями;',
-          '- контроль сроков и этапов выполнения работ;',
-          '- участие в приёмке выполненных работ.',
+          'Строительство и капитальный ремонт социальных, коммунальных и инфраструктурных объектов.',
+          'Сопровождение проектной документации и технических решений.',
+          'Взаимодействие с подрядными организациями.',
+          'Контроль сроков и этапов выполнения работ.',
+          'Участие в приёмке выполненных работ.',
         ],
       },
     ],
@@ -34,11 +34,11 @@ const LANDING_TABS = {
       {
         title: 'Основные направления работы',
         items: [
-          '- обеспечение теплом, водой и коммунальными услугами населённых пунктов;',
-          '- содержание и эксплуатация коммунальной инфраструктуры;',
-          '- подготовка к отопительному сезону;',
-          '- устранение аварийных ситуаций;',
-          '- участие в капитальном ремонте и модернизации объектов ЖКХ.',
+          'Обеспечение теплом, водой и коммунальными услугами населённых пунктов.',
+          'Содержание и эксплуатация коммунальной инфраструктуры.',
+          'Подготовка к отопительному сезону.',
+          'Устранение аварийных ситуаций.',
+          'Участие в капитальном ремонте и модернизации объектов ЖКХ.',
         ],
       },
     ],
@@ -50,12 +50,14 @@ function getInitData() {
 }
 
 function safeDecode(value) {
-  let result = String(value || '').trim();
+  let result = String(value ?? '').trim();
 
   for (let i = 0; i < 3; i += 1) {
     try {
       const decoded = decodeURIComponent(result);
-      if (decoded === result) break;
+      if (decoded === result) {
+        break;
+      }
       result = decoded;
     } catch {
       break;
@@ -63,6 +65,38 @@ function safeDecode(value) {
   }
 
   return result;
+}
+
+function getRawStartParamValues(rawValue) {
+  if (rawValue == null) {
+    return [];
+  }
+
+  if (typeof rawValue === 'string' || typeof rawValue === 'number') {
+    return [String(rawValue)];
+  }
+
+  if (typeof rawValue !== 'object') {
+    return [];
+  }
+
+  const candidates = [];
+  const preferredKeys = ['value', 'raw', 'payload', 'start_param', 'startParam', 'data'];
+
+  for (const key of preferredKeys) {
+    const value = rawValue[key];
+    if (typeof value === 'string' || typeof value === 'number') {
+      candidates.push(String(value));
+    }
+  }
+
+  for (const value of Object.values(rawValue)) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      candidates.push(String(value));
+    }
+  }
+
+  return [...new Set(candidates.map((item) => item.trim()).filter(Boolean))];
 }
 
 function collectStartParamsFromParams(params) {
@@ -79,39 +113,43 @@ function collectStartParamsFromParams(params) {
 }
 
 function addStartParamCandidate(bucket, rawValue) {
-  const value = safeDecode(rawValue);
-  if (!value || bucket.has(value)) {
-    return;
-  }
+  const rawValues = getRawStartParamValues(rawValue);
 
-  bucket.add(value);
+  for (const rawItem of rawValues) {
+    const value = safeDecode(rawItem);
+    if (!value || bucket.has(value)) {
+      continue;
+    }
 
-  const normalized = value.replace(/^[?#]/, '').trim();
-  if (normalized && !bucket.has(normalized)) {
-    bucket.add(normalized);
-  }
+    bucket.add(value);
 
-  if (normalized.includes('=')) {
-    const nestedParams = new URLSearchParams(normalized);
-    collectStartParamsFromParams(nestedParams).forEach((item) => {
-      addStartParamCandidate(bucket, item);
-    });
-  }
+    const normalized = value.replace(/^[?#]/, '').trim();
+    if (normalized && !bucket.has(normalized)) {
+      bucket.add(normalized);
+    }
 
-  if (/^https?:\/\//i.test(normalized)) {
-    try {
-      const nestedUrl = new URL(normalized);
-
-      collectStartParamsFromParams(nestedUrl.searchParams).forEach((item) => {
+    if (normalized.includes('=')) {
+      const nestedParams = new URLSearchParams(normalized);
+      collectStartParamsFromParams(nestedParams).forEach((item) => {
         addStartParamCandidate(bucket, item);
       });
+    }
 
-      const hashParams = new URLSearchParams(nestedUrl.hash.replace(/^#/, ''));
-      collectStartParamsFromParams(hashParams).forEach((item) => {
-        addStartParamCandidate(bucket, item);
-      });
-    } catch {
-      // ignore invalid nested URL
+    if (/^https?:\/\//i.test(normalized)) {
+      try {
+        const nestedUrl = new URL(normalized);
+
+        collectStartParamsFromParams(nestedUrl.searchParams).forEach((item) => {
+          addStartParamCandidate(bucket, item);
+        });
+
+        const hashParams = new URLSearchParams(nestedUrl.hash.replace(/^#/, ''));
+        collectStartParamsFromParams(hashParams).forEach((item) => {
+          addStartParamCandidate(bucket, item);
+        });
+      } catch {
+        // ignore invalid nested URL
+      }
     }
   }
 }
@@ -120,23 +158,26 @@ function extractPostId(startParam) {
   const normalized = safeDecode(startParam).trim();
   if (!normalized) return '';
 
-  const postIdMatch = normalized.match(/\bPST-\d{8}-\d{5}\b/i);
-  const looksLikePostContext =
-    normalized.startsWith('post-') ||
-    /^PST-\d{8}-\d{5}$/i.test(normalized) ||
-    /(?:^|[?&#])(postId|post_id)=/i.test(normalized);
-
-  if (!looksLikePostContext || !postIdMatch) {
-    return '';
+  const directMatch = normalized.match(/\bPST-\d{8}-\d{5}\b/i);
+  if (directMatch) {
+    return directMatch[0].toUpperCase();
   }
 
-  return postIdMatch[0].toUpperCase();
+  if (normalized.startsWith('post-')) {
+    const payloadPart = normalized.slice('post-'.length).trim();
+    const nestedMatch = payloadPart.match(/\bPST-\d{8}-\d{5}\b/i);
+    return nestedMatch ? nestedMatch[0].toUpperCase() : payloadPart.toUpperCase();
+  }
+
+  return '';
 }
 
 function getLaunchContext() {
   const bucket = new Set();
 
   addStartParamCandidate(bucket, window.WebApp?.initDataUnsafe?.start_param);
+  addStartParamCandidate(bucket, window.WebApp?.initDataUnsafe?.startapp);
+  addStartParamCandidate(bucket, window.WebApp?.initDataUnsafe?.startParam);
 
   const searchParams = new URLSearchParams(window.location.search);
   collectStartParamsFromParams(searchParams).forEach((item) => {
@@ -173,10 +214,6 @@ function getLaunchContext() {
     postId: '',
     candidates,
   };
-}
-
-function getStartParam() {
-  return getLaunchContext().startParam;
 }
 
 function formatCount(count) {
@@ -260,9 +297,7 @@ function renderLanding(tabKey) {
         Array.isArray(point.items) && point.items.length
           ? `
             <ul class="landing-point-list">
-              ${point.items
-                .map((item) => `<li>${escapeHtml(item)}</li>`)
-                .join('')}
+              ${point.items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
             </ul>
           `
           : '';
@@ -309,9 +344,7 @@ function renderPost(state) {
 
   postTextEl.textContent = state.post.text || '';
 
-  const attachments = Array.isArray(state.post.attachments)
-    ? state.post.attachments
-    : [];
+  const attachments = Array.isArray(state.post.attachments) ? state.post.attachments : [];
 
   const imageAttachments = attachments.filter(
     (item) => item && item.kind === 'image' && item.imageUrl,
@@ -342,6 +375,11 @@ function renderPost(state) {
 function renderComments(state) {
   const listEl = document.getElementById('commentsList');
   const countPillEl = document.getElementById('commentsCountPill');
+
+  if (!listEl || !countPillEl) {
+    console.error('Comments DOM nodes not found');
+    return;
+  }
 
   const visibleCount = state.comments.filter((item) => !item.isDeleted).length;
   countPillEl.textContent = formatCount(visibleCount);
@@ -402,13 +440,10 @@ async function apiGetComments(postId, initData) {
     headers['x-max-init-data'] = initData;
   }
 
-  const response = await fetch(
-    `/api/comments?postId=${encodeURIComponent(postId)}`,
-    {
-      method: 'GET',
-      headers,
-    },
-  );
+  const response = await fetch(`/api/comments?postId=${encodeURIComponent(postId)}`, {
+    method: 'GET',
+    headers,
+  });
 
   const payload = await readApiResponse(response);
 
@@ -472,15 +507,20 @@ async function refreshComments(state) {
 }
 
 function showLandingMode() {
-  document.getElementById('landingView').classList.remove('hidden');
-  document.getElementById('commentsView').classList.add('hidden');
+  const landingView = document.getElementById('landingView');
+  const commentsView = document.getElementById('commentsView');
+
+  if (landingView) landingView.classList.remove('hidden');
+  if (commentsView) commentsView.classList.add('hidden');
 }
 
 function showCommentsMode() {
-  document.getElementById('landingView').classList.add('hidden');
-  document.getElementById('commentsView').classList.remove('hidden');
-}
+  const landingView = document.getElementById('landingView');
+  const commentsView = document.getElementById('commentsView');
 
+  if (landingView) landingView.classList.add('hidden');
+  if (commentsView) commentsView.classList.remove('hidden');
+}
 
 function setComposerDisabled(disabled) {
   const inputEl = document.getElementById('commentInput');
@@ -499,18 +539,25 @@ function renderCommentsLaunchError(message) {
   showCommentsMode();
   setComposerDisabled(true);
 
-  document.getElementById('postText').textContent = message;
-  document.getElementById('postMediaGrid').innerHTML = '';
-  document.getElementById('postMediaMeta').innerHTML = '';
-  document.getElementById('commentsCountPill').textContent = '0 комментариев';
-  document.getElementById('commentsList').innerHTML = `
-    <div class="empty-state">
-      ${escapeHtml(message)}
-    </div>
-  `;
+  const postTextEl = document.getElementById('postText');
+  const postMediaGridEl = document.getElementById('postMediaGrid');
+  const postMediaMetaEl = document.getElementById('postMediaMeta');
+  const commentsCountPillEl = document.getElementById('commentsCountPill');
+  const commentsListEl = document.getElementById('commentsList');
+
+  if (postTextEl) postTextEl.textContent = message;
+  if (postMediaGridEl) postMediaGridEl.innerHTML = '';
+  if (postMediaMetaEl) postMediaMetaEl.innerHTML = '';
+  if (commentsCountPillEl) commentsCountPillEl.textContent = '0 комментариев';
+
+  if (commentsListEl) {
+    commentsListEl.innerHTML = `
+      <div class="empty-state">
+        ${escapeHtml(message)}
+      </div>
+    `;
+  }
 }
-
-
 
 async function init() {
   const initData = getInitData();
@@ -526,6 +573,7 @@ async function init() {
         candidates: launchContext.candidates,
         search: window.location.search,
         hash: window.location.hash,
+        initDataUnsafeStartParam: window.WebApp?.initDataUnsafe?.start_param,
       });
 
       renderCommentsLaunchError(
@@ -543,7 +591,6 @@ async function init() {
     renderLanding('uksir');
 
     const landingTabsEl = document.getElementById('landingTabs');
-
     if (landingTabsEl) {
       landingTabsEl.addEventListener('click', (event) => {
         const target = event.target;
@@ -557,6 +604,7 @@ async function init() {
     if (window.WebApp?.ready) {
       window.WebApp.ready();
     }
+
     return;
   }
 
@@ -567,13 +615,10 @@ async function init() {
   const inputEl = document.getElementById('commentInput');
   const sendBtn = document.getElementById('sendBtn');
 
-
   if (!refreshBtn || !inputEl || !sendBtn) {
     console.error('Comments controls not found');
     return;
   }
-
-
 
   const state = {
     initData,
@@ -585,21 +630,21 @@ async function init() {
     sending: false,
   };
 
-    try {
-      await refreshComments(state);
-    } catch (error) {
-      console.error(error);
+  try {
+    await refreshComments(state);
+  } catch (error) {
+    console.error(error);
 
-      renderCommentsLaunchError(
-        'Не удалось загрузить комментарии. Если публикация только что вышла, откройте обсуждение повторно через несколько секунд.',
-      );
+    renderCommentsLaunchError(
+      'Не удалось загрузить комментарии. Если публикация только что вышла, откройте обсуждение повторно через несколько секунд.',
+    );
 
-      if (window.WebApp?.ready) {
-        window.WebApp.ready();
-      }
-
-      return;
+    if (window.WebApp?.ready) {
+      window.WebApp.ready();
     }
+
+    return;
+  }
 
   inputEl.addEventListener('input', () => {
     autoResizeTextarea(inputEl);
